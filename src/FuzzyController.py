@@ -168,7 +168,7 @@ class FuzzyController(KesslerController):
         if controller != self.controller:
             self.msg = (f"New controller [{self.controller}] used this time step!")
 
-        return thrust, turn_rate, fire
+        return thrust, turn_rate, fire, True
 
     @property
     def name(self) -> str:
