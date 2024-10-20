@@ -95,8 +95,6 @@ if __name__ == "__main__":
     # game = TrainerEnvironment(settings=game_settings)  # Use this for max-speed, no-graphics simulation
 
     pre = time.perf_counter()
-    chrom = [2, 2, 2, 0, 1, 1, 0, 0, 1, 2, 2, 2, 0, 1, 1, 0, 0, 1]
-    chrom = [int(x) for x in chrom]
     score, perf_data = game.run(
         scenario=scenario_random_repeatable,
         controllers=[FuzzyController()]
