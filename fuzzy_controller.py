@@ -1,3 +1,5 @@
+
+
 from kesslergame import KesslerController
 
 
@@ -16,10 +18,21 @@ class FuzzyController(KesslerController):
         """
         super().__init__()
 
+        self._name: str = "BajaBlasteroids"
+
         # Ship Variables
 
         # Threat Variables
 
+    @property
+    def name(self) -> str:
+        """Getter method for the name of the controller."""
+        return self._name
+
     def control(self, observation):
         # Implement your fuzzy logic here
         return 0
+    
+    def explanation(self) -> str:
+        # Just returns the most recent message. Ideally they would call this whenever self.msg is updated
+        return self.msg

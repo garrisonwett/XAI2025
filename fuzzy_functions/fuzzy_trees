@@ -1,0 +1,55 @@
+import math
+import numpy as np
+import matplotlib.pyplot as plt
+import skfuzzy as fuzz
+
+# def fuzzy_inference_system(distance, closure_rate):
+#     # Define fuzzy variables
+#     x_distance = np.arange(0, 101, 1)
+#     x_closure_rate = np.arange(0, 101, 1)
+#     x_time_to_impact = np.arange(0, 101, 1)
+
+#     # Define fuzzy membership functions
+#     distance_lo = fuzz.trimf(x_distance, [0, 0, 50])
+#     distance_md = fuzz.trimf(x_distance, [0, 50, 100])
+#     distance_hi = fuzz.trimf(x_distance, [50, 100, 100])
+    
+#     closure_rate_lo = fuzz.trimf(x_closure_rate, [0, 0, 50])
+#     closure_rate_md = fuzz.trimf(x_closure_rate, [0, 50, 100])
+#     closure_rate_hi = fuzz.trimf(x_closure_rate, [50, 100, 100])
+    
+#     time_to_impact_short = fuzz.trimf(x_time_to_impact, [0, 0, 50])
+#     time_to_impact_medium = fuzz.trimf(x_time_to_impact, [0, 50, 100])
+#     time_to_impact_long = fuzz.trimf(x_time_to_impact, [50, 100, 100])
+
+#     # Fuzzify inputs
+#     distance_level_lo = fuzz.interp_membership(x_distance, distance_lo, distance)
+#     distance_level_md = fuzz.interp_membership(x_distance, distance_md, distance)
+#     distance_level_hi = fuzz.interp_membership(x_distance, distance_hi, distance)
+    
+#     closure_rate_level_lo = fuzz.interp_membership(x_closure_rate, closure_rate_lo, closure_rate)
+#     closure_rate_level_md = fuzz.interp_membership(x_closure_rate, closure_rate_md, closure_rate)
+#     closure_rate_level_hi = fuzz.interp_membership(x_closure_rate, closure_rate_hi, closure_rate)
+
+#     # Rule evaluation
+#     rule1 = np.fmin(distance_level_lo, closure_rate_level_lo)
+#     rule2 = np.fmin(distance_level_lo, closure_rate_level_md)
+#     rule3 = np.fmin(distance_level_lo, closure_rate_level_hi)
+#     rule4 = np.fmin(distance_level_md, closure_rate_level_lo)
+#     rule5 = np.fmin(distance_level_md, closure_rate_level_md)
+#     rule6 = np.fmin(distance_level_md, closure_rate_level_hi)
+#     rule7 = np.fmin(distance_level_hi, closure_rate_level_lo)
+#     rule8 = np.fmin(distance_level_hi, closure_rate_level_md)
+#     rule9 = np.fmin(distance_level_hi, closure_rate_level_hi)
+
+#     # Apply rules
+#     time_activation_short = np.fmax(rule1, np.fmax(rule2, rule3))
+#     time_activation_medium = np.fmax(rule4, rule5)
+#     time_activation_long = np.fmax(rule6, np.fmax(rule7, np.fmax(rule8, rule9)))
+
+#     # Aggregate outputs
+#     aggregated = np.fmax(time_activation_short, np.fmax(time_activation_medium, time_activation_long))
+
+#     # Defuzzify
+#     time_to_impact = fuzz.defuzz(x_time_to_impact, aggregated, 'centroid')
+#     return time_to_impact
