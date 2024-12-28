@@ -1,4 +1,5 @@
-
+from immutabledict import immutabledict
+from typing import Any, Dict, Tuple
 
 from kesslergame import KesslerController
 
@@ -32,7 +33,12 @@ class FuzzyController(KesslerController):
     def control(self, observation):
         # Implement your fuzzy logic here
         return 0
-    
+
     def explanation(self) -> str:
         # Just returns the most recent message. Ideally they would call this whenever self.msg is updated
         return self.msg
+
+    def actions(
+        self, ship_state: Dict[str, Any], game_state: immutabledict[Any, Any]
+    ) -> Tuple[float, float, bool, bool]:
+        return 0.0, 0.0, True, True

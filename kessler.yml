@@ -1,0 +1,15 @@
+# Platform: Linux
+# Created: 2024-12-28
+# Updated: 2024-12-28
+# Do not run this file directly. It is used in the setup shell script.
+
+name: kessler
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.13.1
+  - pip=24.3.1
+  - pip:
+    - setuptools==75.6.0
+    - kesslergame==2.1.9
