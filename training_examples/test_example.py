@@ -12,7 +12,7 @@ from scenarios import scenarios
 from utils import LoggerUtility, LoggingLevel
 
 # Set up the logger
-logger = LoggerUtility(LoggingLevel.INFO).get_logger()
+logger = LoggerUtility(LoggingLevel.DEBUG).get_logger()
 
 # All Available Settings
 game_settings = {
