@@ -1,10 +1,7 @@
-from typing import Tuple, List
-from dataclasses import dataclass
-from immutables import Map as ImmutableDict
+from typing import NamedTuple, Tuple, TypedDict, List
 
 
-@dataclass(frozen=True)
-class AsteroidState:
+class AsteroidState(TypedDict):
     """
     The state of an asteroid in the game.
 
@@ -23,20 +20,19 @@ class AsteroidState:
     radius: float
 
 
-@dataclass(frozen=True)
-class ShipState:
+class ShipState(TypedDict):
     """
     The state of a ship in the game.
-    
+
     Attributes:
         is_respawning (`bool`): Whether the ship is respawning.
         position (`Tuple[float, float]`): The position of the ship.
         velocity (`Tuple[float, float]`): The velocity of the ship.
         speed (`float`): The speed of the ship.
         heading (`float`): The heading of the ship.
-        mass (`float`): The mass of the ship
+        mass (`float`): The mass of the ship.
         radius (`float`): The radius of the ship.
-        id (`int`): The id of the ship.
+        id (`int`): The ID of the ship.
         team (`str`): The team of the ship.
         lives_remaining (`int`): The number of lives remaining for the ship.
     """
@@ -53,11 +49,10 @@ class ShipState:
     lives_remaining: int
 
 
-@dataclass(frozen=True)
 class ShipOwnState(ShipState):
     """
     The state of a ship in the game, including additional information for the ship's own state.
-    
+
     Attributes:
         bullets_remaining (`int`): The number of bullets remaining for the ship.
         mines_remaining (`int`): The number of mines remaining for the ship.
@@ -69,6 +64,12 @@ class ShipOwnState(ShipState):
         turn_rate_range (`Tuple[float, float]`): The range of turn rates the ship can use.
         max_speed (`float`): The maximum speed of the ship.
         drag (`float`): The drag of the ship.
+
+    Examples:
+        ```python
+        # Get the number of bullets remaining for the ship
+        bullets_remaining = ship_own_state["bullets_remaining"]
+        ```
     """
 
     bullets_remaining: int
@@ -83,11 +84,10 @@ class ShipOwnState(ShipState):
     drag: float
 
 
-@dataclass(frozen=True)
-class BulletState:
+class BulletState(TypedDict):
     """
     The state of a bullet in the game.
-    
+
     Attributes:
         position (`Tuple[float, float]`): The position of the bullet.
         velocity (`Tuple[float, float]`): The velocity of the bullet.
@@ -101,11 +101,10 @@ class BulletState:
     mass: float
 
 
-@dataclass(frozen=True)
-class MineState:
+class MineState(TypedDict):
     """
     The state of a mine in the game.
-    
+
     Attributes:
         position (`Tuple[float, float]`): The position of the mine.
         mass (`float`): The mass of the mine.
@@ -119,8 +118,7 @@ class MineState:
     remaining_time: float
 
 
-@dataclass(frozen=True)
-class GameState:
+class GameState(TypedDict):
     """
     The game state for the kessler game.
 
@@ -134,21 +132,29 @@ class GameState:
         delta_time (`float`): The time since the last frame.
         sim_frame (`int`): The current simulation frame.
         time_limit (`float`): The time limit for the game.
+
+    Examples:
+        ```python
+        # Get all asteroid positions
+        asteroid_positions = [asteroid["position"] for asteroid in game_state["asteroids"]]
+
+        # Get all active ships
+        active_ships = [ship for ship in game_state["ships"] if not ship["is_respawning"]]
+        ```
     """
 
     asteroids: List[AsteroidState]
     ships: List[ShipState]
     bullets: List[BulletState]
     mines: List[MineState]
-    map_size: Tuple[int, int]  # or Tuple[Literal[1000], Literal[800]]
+    map_size: Tuple[int, int]
     time: float
     delta_time: float
     sim_frame: int
     time_limit: float
 
 
-@dataclass(frozen=True)
-class ActionsReturn:
+class ActionsReturn(NamedTuple):
     """
     The return type for the overloaded actions method.
 
@@ -163,25 +169,3 @@ class ActionsReturn:
     ship_turn_rate: float
     fire: bool
     deploy_mine: bool
-
-
-def convert_game_state(game_state: ImmutableDict) -> GameState:
-    """Converts a game state from an immutabledict to a GameState.
-
-    Args:
-        game_state (`ImmutableDict`): The game state to convert from kessler_game.
-
-    Returns:
-        `GameState`: The converted game state.
-    """
-    return GameState(
-        asteroids=[AsteroidState(**asteroid) for asteroid in game_state["asteroids"]],
-        ships=[ShipState(**ship) for ship in game_state["ships"]],
-        bullets=[BulletState(**bullet) for bullet in game_state["bullets"]],
-        mines=[MineState(**mine) for mine in game_state["mines"]],
-        map_size=tuple(game_state["map_size"]),
-        time=float(game_state["time"]),
-        delta_time=float(game_state["delta_time"]),
-        sim_frame=int(game_state["sim_frame"]),
-        time_limit=float(game_state["time_limit"]),
-    )
