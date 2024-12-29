@@ -12,5 +12,4 @@ dependencies:
   - pip=24.3.1
   - pip:
     - setuptools==75.6.0
-    - immutables==0.21
     - kesslergame==2.1.9

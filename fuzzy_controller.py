@@ -1,6 +1,9 @@
+from typing import TYPE_CHECKING
+
 from kesslergame import KesslerController
 
-from utils.types import ActionsReturn, ShipOwnState, convert_game_state
+if TYPE_CHECKING:
+    from utils.types import ActionsReturn, GameState, ShipOwnState
 
 
 class FuzzyController(KesslerController):
@@ -37,8 +40,9 @@ class FuzzyController(KesslerController):
         # Just returns the most recent message. Ideally they would call this whenever self.msg is updated
         return self.msg
 
-    def actions(self, ship_state, game_state) -> ActionsReturn:
-        ship_state = ShipOwnState(**ship_state)
-        game_state = convert_game_state(game_state)
+    def actions(
+        self, ship_state: "ShipOwnState", game_state: "GameState"
+    ) -> "ActionsReturn":
+        """The actions method for the fuzzy controller."""
 
         return 0.0, 0.0, True, True
