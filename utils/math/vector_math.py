@@ -1,6 +1,6 @@
 import numpy as np
 
-def calc_intercept_angle(ship_pos, bullet_speed, asteroid_pos, asteroid_velocity):
+def calc_intercept_angle(ship_pos, bullet_speed, asteroid_pos, asteroid_velocity, dt):
     # Calculating with a stationary ship assumption
 
     # Calculate the relative position of the asteroid to the ship
@@ -19,8 +19,8 @@ def calc_intercept_angle(ship_pos, bullet_speed, asteroid_pos, asteroid_velocity
 
     sqrt_disc = np.sqrt(discriminant)
 
-    t1 = (-b + sqrt_disc) / (2 * a)
-    t2 = (-b - sqrt_disc) / (2 * a)
+    t1 = (-b + sqrt_disc) / (2 * a) + dt
+    t2 = (-b - sqrt_disc) / (2 * a) + dt
     valid_t = [t for t in [t1, t2] if t >= 0]
     t_min = min(valid_t)
     intercept_dx = dx + asteroid_velocity[0] * t_min
@@ -31,11 +31,11 @@ def calc_intercept_angle(ship_pos, bullet_speed, asteroid_pos, asteroid_velocity
 
     return intercept_angle
 
-angle = calc_intercept_angle([0,0], 1.41, [0,1],  [1,0])
+angle = calc_intercept_angle([0,0], 1.41, [0,1],  [1,0], 0.03333)
 
-def turn_angle(ship_pos, ship_heading, ship_turn_rate, bullet_speed, asteroid_pos, asteroid_velocity, dt):
+def turn_angle(ship_pos, ship_heading, ship_rate_range, bullet_speed, asteroid_pos, asteroid_velocity, dt):
     print("start of turn angle")
-    angle_delta = calc_intercept_angle(ship_pos, bullet_speed, asteroid_pos, asteroid_velocity) - ship_heading
+    angle_delta = calc_intercept_angle(ship_pos, bullet_speed, asteroid_pos, asteroid_velocity, dt) - ship_heading
     print("angle delta", angle_delta)
     if 0 <= (angle_delta) < 180:
         right_turn = False
@@ -43,24 +43,20 @@ def turn_angle(ship_pos, ship_heading, ship_turn_rate, bullet_speed, asteroid_po
         right_turn = True
 
     if right_turn:
-        right_turn_rate = ship_turn_rate[1]
+        right_turn_rate = ship_rate_range[1]
 
         if angle_delta > right_turn_rate * dt:
             turn_rate = right_turn_rate
-            print("1")
         else:
-            turn_rate = angle_delta
-            print("2")
+            turn_rate = angle_delta + (angle_delta/6)
 
     else:
-        left_turn_rate = ship_turn_rate[0]
+        left_turn_rate = ship_rate_range[0]
 
         if angle_delta < left_turn_rate * dt:
             turn_rate = left_turn_rate
-            print("3")
         else:
-            turn_rate = angle_delta
-            print("4")
+            turn_rate = angle_delta - (angle_delta/6)
 
     print("end of turn angle")
     return turn_rate
