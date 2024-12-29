@@ -66,7 +66,6 @@ def _calc_intercept_angle(
 
     return intercept_angle
 
-
 def turn_angle(
     ship_position: Tuple[float, float],
     ship_heading: float,
@@ -118,3 +117,39 @@ def turn_angle(
             return right_turn_rate
         else:
             return angle_delta / delta_time
+
+def calculate_if_collide(ship_position,ship_heading,ship_speed,ship_radius,asteroid_position,asteroid_velocity,asteroid_radius) -> Tuple[bool, float]:
+
+    ship_heading_rad = ship_heading * math.pi / 180
+    ship_x, ship_y = ship_position
+    asteroid_x, asteroid_y = asteroid_position
+    asteroid_v_x, asteroid_v_y = asteroid_velocity
+    dx, dy = asteroid_x - ship_x, asteroid_y - ship_y
+    dv_x, dv_y = asteroid_v_x - ship_speed*(math.cos(ship_heading_rad)), asteroid_v_y - ship_speed*(math.sin(ship_heading_rad))
+    R = ship_radius + asteroid_radius
+
+    a = dv_x**2 + dv_y**2
+    b = 2*(dx*dv_x + dy*dv_y)
+    c = dx**2 + dy**2 - R**2
+
+    discriminant = b**2 - 4*a*c
+
+    if discriminant < 0:
+        return False, -1
+    
+    sqrt_disc = math.sqrt(discriminant)
+
+    t1 = (-b + sqrt_disc) / (2*a)
+    t2 = (-b - sqrt_disc) / (2*a)
+
+    collision_times = []
+    for t_candidate in (t1, t2):
+        if t_candidate >= 0:
+            collision_times.append(t_candidate)
+
+    if not collision_times:
+        return False, -1
+    
+    collision_time = min(collision_times)
+    return True, collision_time
+    

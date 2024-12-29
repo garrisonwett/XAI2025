@@ -59,6 +59,7 @@ class FuzzyController(KesslerController):
             asteroid_velocities = [
                 asteroid["velocity"] for asteroid in game_state["asteroids"]
             ]
+            asteroid_radii = [asteroid["radius"] for asteroid in game_state["asteroids"]]
             turn_angle = vm.turn_angle(
                 ship_state["position"],
                 ship_state["heading"],
@@ -69,4 +70,8 @@ class FuzzyController(KesslerController):
                 game_state["delta_time"],
             )
 
-        return 0.0, turn_angle, True, True
+            collide_bool, collision_times = vm.calculate_if_collide(ship_state["position"],ship_state["heading"],ship_state["speed"],ship_state["radius"],asteroid_positions[0],asteroid_velocities[0],asteroid_radii[0]) 
+            print(collide_bool)
+            print(collision_times)
+
+        return 0.0, turn_angle, False, True

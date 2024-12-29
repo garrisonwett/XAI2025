@@ -31,5 +31,15 @@ scenarios: Dict[str, Scenario] = {
         ammo_limit_multiplier=0.0,
         stop_if_no_ammo=False,
     ),
+    "collision_test": Scenario(
+        name="collision_test",
+        ship_states=[{"position": (900, 225), "angle": 270, "lives": 5, "team": 1}],
+        asteroid_states=[{"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}],
+        map_size=(1200, 900),
+        time_limit=90,
+        ammo_limit_multiplier=0.0,
+        stop_if_no_ammo=False,
+    ),
+
     # Add more scenarios here
 }
