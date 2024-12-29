@@ -22,14 +22,14 @@ scenarios: Dict[str, Scenario] = {
         ammo_limit_multiplier=0.5,
         stop_if_no_ammo=True,
     ),
-        "battle_arena": Scenario(
-        name="battle_arena",
-        num_asteroids=15,
-        ship_states=[{"position": (200, 200), "angle": 45, "lives": 5, "team": 2}],
+    "one_asteroid": Scenario(
+        name="one_asteroid",
+        ship_states=[{"position": (500, 700), "angle": 270, "lives": 5, "team": 1}],
+        asteroid_states=[{"position": (200, 200), "angle": 0.0, "speed": 100}],
         map_size=(1200, 900),
         time_limit=90,
-        ammo_limit_multiplier=0.5,
-        stop_if_no_ammo=True,
+        ammo_limit_multiplier=0,
+        stop_if_no_ammo=False,
     ),
     # Add more scenarios here
 }
