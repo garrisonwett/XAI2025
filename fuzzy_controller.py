@@ -1,7 +1,11 @@
 from typing import TYPE_CHECKING
 
 from kesslergame import KesslerController
-import utils.math.vector_math as vm
+
+from utils import LoggerUtility
+from utils.kessler_helpers import get_bullet_speed
+from utils.math import vector_math as vm
+
 if TYPE_CHECKING:
     from utils.types import ActionsReturn, GameState, ShipOwnState
 
@@ -25,6 +29,9 @@ class FuzzyController(KesslerController):
 
         # Ship Variables
 
+        # Bullet Variables
+        self.bullet_speed = get_bullet_speed()
+
         # Threat Variables
 
     @property
@@ -44,13 +51,22 @@ class FuzzyController(KesslerController):
         self, ship_state: "ShipOwnState", game_state: "GameState"
     ) -> "ActionsReturn":
         """The actions method for the fuzzy controller."""
-        # Implement your actions here
 
         if True:
-            asteroid_positions = [asteroid["position"] for asteroid in game_state["asteroids"]]
-            asteroid_velocities = [asteroid["velocity"] for asteroid in game_state["asteroids"]]
-            turn_angle = vm.turn_angle(ship_state["position"], ship_state["heading"], ship_state["turn_rate_range"], 400, asteroid_positions[0], asteroid_velocities[0], game_state["delta_time"]) # Need to add BulletState to this function to access bullet speed info
-
-        
+            asteroid_positions = [
+                asteroid["position"] for asteroid in game_state["asteroids"]
+            ]
+            asteroid_velocities = [
+                asteroid["velocity"] for asteroid in game_state["asteroids"]
+            ]
+            turn_angle = vm.turn_angle(
+                ship_state["position"],
+                ship_state["heading"],
+                ship_state["turn_rate_range"],
+                self.bullet_speed,
+                asteroid_positions[0],
+                asteroid_velocities[0],
+                game_state["delta_time"],
+            )
 
         return 0.0, turn_angle, True, True

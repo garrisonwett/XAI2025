@@ -28,7 +28,7 @@ scenarios: Dict[str, Scenario] = {
         asteroid_states=[{"position": (200, 200), "angle": 0.0, "speed": 100}],
         map_size=(1200, 900),
         time_limit=90,
-        ammo_limit_multiplier=0,
+        ammo_limit_multiplier=0.0,
         stop_if_no_ammo=False,
     ),
     # Add more scenarios here

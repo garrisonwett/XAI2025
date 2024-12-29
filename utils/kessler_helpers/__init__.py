@@ -1,0 +1,1 @@
+from .bullet_helper import get_bullet_speed

@@ -9,6 +9,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from fuzzy_controller import FuzzyController
 from scenarios import scenarios
+from utils import LoggerUtility, LoggingLevel
+
+# Set up the logger
+logger = LoggerUtility(LoggingLevel.INFO).get_logger()
 
 # All Available Settings
 game_settings = {
@@ -59,6 +63,8 @@ if __name__ == "__main__":
             game = KesslerGame(settings=game_settings)
         case "TrainerEnvironment":
             game = TrainerEnvironment(settings=game_settings)
+
+    logger.info(f"Running scenario: {selected_scenario.name}")
 
     initial_time = time.perf_counter()
     score, perf_data = game.run(
