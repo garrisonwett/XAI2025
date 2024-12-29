@@ -14,7 +14,6 @@ def _calc_intercept_angle(
     bullet_speed: float,
     asteroid_position: Tuple[float, float],
     asteroid_velocity: Tuple[float, float],
-    delta_time: float,
 ) -> float:
     # Calculate the relative position of the asteroid to the ship
     dx, dy = (
@@ -35,8 +34,9 @@ def _calc_intercept_angle(
 
     sqrt_disc = np.sqrt(discriminant)
 
-    t1 = (-b + sqrt_disc) / (2 * a) + delta_time
-    t2 = (-b - sqrt_disc) / (2 * a) + delta_time
+    denominator = 2 * a
+    t1 = (-b + sqrt_disc) / denominator
+    t2 = (-b - sqrt_disc) / denominator
     t_min = min([t for t in [t1, t2] if t >= 0])
     intercept_dx = dx + asteroid_v_x * t_min
     intercept_dy = dy + asteroid_v_y * t_min
@@ -62,7 +62,6 @@ def turn_angle(
             bullet_speed,
             asteroid_position,
             asteroid_velocity,
-            delta_time,
         )
         - ship_heading
     )
@@ -73,13 +72,13 @@ def turn_angle(
         return 0
 
     left_turn_rate, right_turn_rate = ship_turn_rate_range
-    if angle_delta < 180:
+    if 0 < angle_delta < 180:
         if angle_delta < left_turn_rate * delta_time:
             return left_turn_rate
         else:
-            return angle_delta - (angle_delta / 6)
+            return angle_delta / delta_time
     else:
         if angle_delta > right_turn_rate * delta_time:
             return right_turn_rate
         else:
-            return angle_delta + (angle_delta / 6)
+            return angle_delta / delta_time
