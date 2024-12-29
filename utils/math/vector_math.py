@@ -1,6 +1,5 @@
+import math
 from typing import Tuple
-
-import numpy as np
 
 from utils import LoggerUtility
 
@@ -15,6 +14,19 @@ def _calc_intercept_angle(
     asteroid_position: Tuple[float, float],
     asteroid_velocity: Tuple[float, float],
 ) -> float:
+    """
+    Calculate the angle for the ship to shoot in order to intercept a moving asteroid.
+
+    Args:
+        ship_position (`Tuple[float, float]`): The (x, y) position of the ship.
+        bullet_speed (`float`): The speed of the ship's bullets.
+        asteroid_position (`Tuple[float, float]`): The (x, y) position of the asteroid.
+        asteroid_velocity (`Tuple[float, float]`): The (x, y) velocity vector of the asteroid.
+
+    Returns:
+        `float`: The angle in degrees (0 to 360) that the ship needs to shoot to intercept the asteroid.
+               Returns 0 if no valid intercept is possible.
+    """    
     # Calculate the relative position of the asteroid to the ship
     dx, dy = (
         asteroid_position[0] - ship_position[0],
@@ -32,17 +44,25 @@ def _calc_intercept_angle(
     if discriminant < 0:
         return 0
 
-    sqrt_disc = np.sqrt(discriminant)
-
+    # Solve the quadratic equation for time
+    sqrt_disc = math.sqrt(discriminant)
     denominator = 2 * a
+
     t1 = (-b + sqrt_disc) / denominator
     t2 = (-b - sqrt_disc) / denominator
-    t_min = min([t for t in [t1, t2] if t >= 0])
+
+    # Find the earliest valid time (non-negative)
+    valid_times = [t for t in [t1, t2] if t >= 0]
+    if not valid_times:
+        return 0
+    t_min = min(valid_times)
+
+    # Calculate the intercept position
     intercept_dx = dx + asteroid_v_x * t_min
     intercept_dy = dy + asteroid_v_y * t_min
 
-    intercept_angle = np.arctan2(intercept_dy, intercept_dx) * 180 / np.pi
-    intercept_angle = intercept_angle % 360
+    # Calculate the angle to intercept and normalize to 0-360 degrees
+    intercept_angle = math.degrees(math.atan2(intercept_dy, intercept_dx)) % 360
 
     return intercept_angle
 
@@ -56,6 +76,21 @@ def turn_angle(
     asteroid_velocity: Tuple[float, float],
     delta_time: float,
 ) -> float:
+    """
+    Calculate the angle the ship needs to turn to intercept a moving asteroid.
+
+    Args:
+        ship_position (`Tuple[float, float]`): The (x, y) position of the ship.
+        ship_heading (`float`): The current heading of the ship in degrees.
+        ship_turn_rate_range (`Tuple[float, float]`): The maximum turn rates (left, right) in degrees per second.
+        bullet_speed (`float`): The speed of the ship's bullets.
+        asteroid_position (`Tuple[float, float]`): The (x, y) position of the asteroid.
+        asteroid_velocity (`Tuple[float, float]`): The (x, y) velocity vector of the asteroid.
+        delta_time (`float`): The time interval for the calculation.
+
+    Returns:
+        `float`: The turn rate (positive for left, negative for right) to align the ship with the intercept angle.
+    """
     angle_delta = (
         _calc_intercept_angle(
             ship_position,
@@ -67,11 +102,12 @@ def turn_angle(
     )
     logger.debug(f"Angle delta: {angle_delta}")
 
-    # The asteroid is already in the direction of the ship
-    if angle_delta == 0:
+    # If the asteroid is already in the direction of the ship, no turn is needed
+    if math.isclose(angle_delta, 0, abs_tol=1e-6):
         return 0
 
     left_turn_rate, right_turn_rate = ship_turn_rate_range
+    # Determine the appropriate turn rate
     if 0 < angle_delta < 180:
         if angle_delta < left_turn_rate * delta_time:
             return left_turn_rate
