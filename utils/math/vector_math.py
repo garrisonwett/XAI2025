@@ -26,7 +26,7 @@ def _calc_intercept_angle(
     Returns:
         `float`: The angle in degrees (0 to 360) that the ship needs to shoot to intercept the asteroid.
                Returns 0 if no valid intercept is possible.
-    """    
+    """
     # Calculate the relative position of the asteroid to the ship
     dx, dy = (
         asteroid_position[0] - ship_position[0],
@@ -65,6 +65,7 @@ def _calc_intercept_angle(
     intercept_angle = math.degrees(math.atan2(intercept_dy, intercept_dx)) % 360
 
     return intercept_angle
+
 
 def turn_angle(
     ship_position: Tuple[float, float],
@@ -118,38 +119,64 @@ def turn_angle(
         else:
             return angle_delta / delta_time
 
-def calculate_if_collide(ship_position,ship_heading,ship_speed,ship_radius,asteroid_position,asteroid_velocity,asteroid_radius) -> Tuple[bool, float]:
 
-    ship_heading_rad = ship_heading * math.pi / 180
+def calculate_if_collide(
+    ship_position: Tuple[float, float],
+    ship_heading: float,
+    ship_speed: float,
+    ship_radius: float,
+    asteroid_position: Tuple[float, float],
+    asteroid_velocity: Tuple[float, float],
+    asteroid_radius: float,
+) -> Tuple[bool, float]:
+    """
+    Calculate if the ship will collide with an asteroid and the time of collision.
+
+    Args:
+        ship_position (`Tuple[float, float]`): The (x, y) position of the ship.
+        ship_heading (`float`): The heading of the ship in degrees.
+        ship_speed (`float`): The speed of the ship.
+        ship_radius (`float`): The radius of the ship.
+        asteroid_position (`Tuple[float, float]`): The (x, y) position of the asteroid.
+        asteroid_velocity (`Tuple[float, float]`): The (x, y) velocity vector of the asteroid.
+        asteroid_radius (`float`): The radius of the asteroid.
+
+    Returns:
+        `Tuple[bool, float]`: A tuple of collision boolean and the time of collision
+    """
+
+    ship_heading_rad = math.radians(ship_heading)
+
     ship_x, ship_y = ship_position
     asteroid_x, asteroid_y = asteroid_position
     asteroid_v_x, asteroid_v_y = asteroid_velocity
+
     dx, dy = asteroid_x - ship_x, asteroid_y - ship_y
-    dv_x, dv_y = asteroid_v_x - ship_speed*(math.cos(ship_heading_rad)), asteroid_v_y - ship_speed*(math.sin(ship_heading_rad))
+    dv_x, dv_y = asteroid_v_x - ship_speed * (
+        math.cos(ship_heading_rad)
+    ), asteroid_v_y - ship_speed * (math.sin(ship_heading_rad))
+
     R = ship_radius + asteroid_radius
 
     a = dv_x**2 + dv_y**2
-    b = 2*(dx*dv_x + dy*dv_y)
+    b = 2 * (dx * dv_x + dy * dv_y)
     c = dx**2 + dy**2 - R**2
 
-    discriminant = b**2 - 4*a*c
+    discriminant = b**2 - 4 * a * c
 
     if discriminant < 0:
         return False, -1
-    
+
     sqrt_disc = math.sqrt(discriminant)
 
-    t1 = (-b + sqrt_disc) / (2*a)
-    t2 = (-b - sqrt_disc) / (2*a)
+    denominator = 2 * a
+    t1 = (-b + sqrt_disc) / denominator
+    t2 = (-b - sqrt_disc) / denominator
 
-    collision_times = []
-    for t_candidate in (t1, t2):
-        if t_candidate >= 0:
-            collision_times.append(t_candidate)
-
-    if not collision_times:
+    # Find the earliest valid collision time (non-negative)
+    valid_collision_times = [t for t in [t1, t2] if t >= 0]
+    if not valid_collision_times:
         return False, -1
-    
-    collision_time = min(collision_times)
-    return True, collision_time
-    
+    t_min = min(valid_collision_times)
+
+    return True, t_min
