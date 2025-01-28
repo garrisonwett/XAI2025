@@ -67,6 +67,15 @@ def _calc_intercept_angle(
     return intercept_angle
 
 
+def heading_relative_angle(ship_position, ship_heading, asteroid_position):
+
+    dx, dy = asteroid_position[0] - ship_position[0], asteroid_position[1] - ship_position[1]
+    angle = math.degrees(math.atan2(dy, dx)) % 360
+
+    relative_angle = (angle - ship_heading) % 360
+
+    return relative_angle
+
 def turn_angle(
     ship_position: Tuple[float, float],
     ship_heading: float,
@@ -118,6 +127,31 @@ def turn_angle(
             return right_turn_rate
         else:
             return angle_delta / delta_time
+
+def heading_and_speed_to_velocity(heading: float, speed: float) -> Tuple[float, float]:
+
+    heading_rad = math.radians(heading)
+    return speed * math.cos(heading_rad), speed * math.sin(heading_rad)
+
+
+def calculate_closure_rate(
+    ship_position: Tuple[float, float],
+    ship_heading: float,
+    ship_speed: float,
+    asteroid_position: Tuple[float, float],
+    asteroid_velocity: Tuple[float, float],
+) -> float:
+    
+
+    dx, dy = asteroid_position[0] - ship_position[0], asteroid_position[1] - ship_position[1]
+    asteroid_v_x, asteroid_v_y = asteroid_velocity
+    ship_v_x, ship_v_y = heading_and_speed_to_velocity(ship_heading, ship_speed)
+
+    closure_rate = -1 * (dx * (asteroid_v_x - ship_v_x) + dy * (asteroid_v_y - ship_v_y)) / math.sqrt(dx**2 + dy**2)
+    return closure_rate
+
+
+
 
 
 def calculate_if_collide(

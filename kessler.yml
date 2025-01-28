@@ -14,3 +14,4 @@ dependencies:
     - setuptools==75.6.0
     - scikit-fuzzy==0.5.0
     - kesslergame==2.1.9
+    - scipy==1.15.1

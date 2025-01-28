@@ -5,7 +5,7 @@ from kesslergame import KesslerController
 from utils import LoggerUtility
 from utils.kessler_helpers import get_bullet_speed
 from utils.math import vector_math as vm
-
+from fuzzy_logic.fuzzy_trees import thrust_tree
 if TYPE_CHECKING:
     from utils.types import ActionsReturn, GameState, ShipOwnState
 
@@ -82,4 +82,21 @@ class FuzzyController(KesslerController):
             asteroid_radii[0],
         )
 
-        return 0.0, turn_angle, False, True
+        relative_heading = vm.heading_relative_angle(
+            ship_state["position"],
+            ship_state["heading"],
+            asteroid_positions[0],
+        )
+
+        closure_rate = vm.calculate_closure_rate(
+            ship_state["position"],
+            ship_state["heading"],
+            ship_state["speed"],
+            asteroid_positions[0],
+            asteroid_velocities[0],
+        )
+
+        
+        thrust = thrust_tree(closure_rate, relative_heading)
+        print(thrust)
+        return thrust, turn_angle, False, True
