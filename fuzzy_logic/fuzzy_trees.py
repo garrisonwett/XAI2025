@@ -56,3 +56,106 @@ def thrust_tree(closure = 0, heading = 0):
     thrust.input['relative_heading'] = heading
     thrust.compute()
     return thrust.output['output_value']
+
+
+# def aim_tree(nearest_10):
+
+import time
+import numpy as np
+
+
+class RuspiniZeroth3():
+    def __init__(self, mfs, rules):
+        """
+        mfs = [[0, c1, c2, ... 1],[0, c1, c2, ... 1],[ 0, c1, c2, ... 1 ],[...]] (center of each triangle)
+        rules = [v1, v2, ...]: values for each combo of rules (5x5 mf gives 25 rules)
+        """
+        mfs[mfs>=1.0] = 0.99999999
+        mfs[mfs<=0.0] = 0.00000001
+        rules[rules>=1.0] = 0.99999999
+        rules[rules<=0.0] = 0.00000001
+        zeros = np.zeros((len(mfs[:,0]),1))
+        mfs = np.transpose(np.concatenate((zeros, np.cumsum(mfs, axis=1)), axis=1))
+        norm_mfs = mfs * (1/np.max(mfs, axis=0))
+        self.mfs = np.transpose(norm_mfs)
+        self.rules = np.reshape(rules, (np.shape(self.mfs)[1], np.shape(self.mfs)[1], np.shape(self.mfs)[1]))
+
+    def CalcMem(self, ins):
+        # Replace values outside with 0 and 1 basically. We also hate 0 and 1 specifically.
+        ins = [max(min(0.999999999, i), 0.000000001) for i in ins]
+        mems = np.zeros(np.shape(self.mfs))
+        for i, mf in enumerate(self.mfs):
+            r = mf[0]
+            j = 1
+            while r <= ins[i]:
+                l = mf[j-1]
+                r = mf[j]
+                j += 1
+            mems[i][j-2] = (r - ins[i])/(r-l)
+            mems[i][j-1] = (ins[i] - l)/(r-l)
+        mem = np.outer(np.outer(mems[0],mems[1]), mems[2]).reshape(len(self.mfs[0]),len(self.mfs[0]),len(self.mfs[0]))
+        mr = np.multiply(mem, self.rules)
+        return np.sum(mr)/np.sum(mem)
+
+
+class RuspiniZeroth2():
+    def __init__(self, mfs, rules):
+        """
+        mfs = [[0, c1, c2, ... 1],[0, c1, c2, ... 1],[ 0, c1, c2, ... 1 ],[...]] (center of each triangle)
+        rules = [v1, v2, ...]: values for each combo of rules (5x5 mf gives 25 rules)
+        """
+        # Order centers of functions and change rule order to match indicies
+        mfs[mfs>=1.0] = 0.99999999
+        mfs[mfs<=0.0] = 0.00000001
+        rules[rules>=1.0] = 0.99999999
+        rules[rules<=0.0] = 0.00000001
+        zeros = np.zeros((len(mfs[:,0]),1))
+        mfs = np.transpose(np.concatenate((zeros, np.cumsum(mfs, axis=1)), axis=1))
+        norm_mfs = mfs * (1/np.max(mfs, axis=0))
+        self.mfs = np.transpose(norm_mfs)
+        self.rules = np.reshape(rules, (np.shape(self.mfs)[1], np.shape(self.mfs)[1]))
+
+    def CalcMem(self, ins):
+        mems = np.zeros(np.shape(self.mfs))
+
+        if ins[0] <= 0.0: ins[0] = 0.000000000001
+        elif ins[0] >= 1.0: ins[0] = 0.999999999999
+        if ins[1] <= 0.0: ins[1] = 0.000000000001
+        elif ins[1] >= 1.0: ins[1] = 0.999999999999
+
+        for i, mf in enumerate(self.mfs):
+            r = mf[0]
+            j = 1
+            while r <= ins[i]:
+                l = mf[j-1]
+                r = mf[j]
+                j += 1
+            mems[i][j-2] = (r - ins[i])/(r-l)
+            mems[i][j-1] = (ins[i] - l)/(r-l)
+        mem = np.outer(mems[1],mems[0]).reshape(len(self.mfs[0]),len(self.mfs[0]))
+        mr = np.multiply(mem, self.rules)
+        return np.sum(mr)/np.sum(mem)
+
+
+if __name__ == "__main__":
+    mf_r_flat = [0,0.6,0.4,0.8,1,0,0.4,0.5,0.7,1,0.0,0.1,0.2,0.3,1.0,.5,.6,.7,.8,.9,0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.0,0.1,0.2,0.3,0.4,0.0,0.1,0.2,0.3,0.4,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]
+    mfs = np.asarray([mf_r_flat[1:4], mf_r_flat[6:9]])
+    rules = np.asarray(mf_r_flat[10:26])
+
+    TestFIS = RuspiniZeroth2(mfs, rules)
+
+    t = time.perf_counter()
+    for i in range(1):
+        ins = [0.6,0.3]
+        output = TestFIS.CalcMem(ins)
+    print((time.perf_counter() - t)/1)
+
+    mfs = np.asarray([mf_r_flat[1:4], mf_r_flat[6:9], mf_r_flat[11:14]])
+    rules = np.asarray(mf_r_flat[15:79])
+
+    TestFIS = RuspiniZeroth3(mfs, rules)
+    t = time.perf_counter()
+    for i in range(1):
+        ins = [0.6,0.3,0.35]
+        output = TestFIS.CalcMem(ins)
+    print((time.perf_counter() - t)/1)

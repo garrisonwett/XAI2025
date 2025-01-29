@@ -214,3 +214,14 @@ def calculate_if_collide(
     t_min = min(valid_collision_times)
 
     return True, t_min
+
+def warp_asteroids(asteroid_positions, map_size, ship_position):
+    ship_x, ship_y = ship_position
+    width, height = map_size
+    for asteroid_x, asteroid_y in asteroid_positions:
+        if abs(asteroid_x - ship_x) > width / 2:
+            asteroid_x += width/2
+        if abs(asteroid_y - ship_y) > height / 2:
+            asteroid_y += height/2
+    warp_positions = [(asteroid_x, asteroid_y) for asteroid_x, asteroid_y in asteroid_positions]
+    return warp_positions

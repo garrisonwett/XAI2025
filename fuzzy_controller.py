@@ -87,7 +87,7 @@ class FuzzyController(KesslerController):
             ship_state["heading"],
             asteroid_positions[0],
         )
-
+        
         closure_rate = vm.calculate_closure_rate(
             ship_state["position"],
             ship_state["heading"],
@@ -95,8 +95,9 @@ class FuzzyController(KesslerController):
             asteroid_positions[0],
             asteroid_velocities[0],
         )
-
-        
+        print(asteroid_positions[:])
+        warp_positions = vm.warp_asteroids(asteroid_positions, game_state["map_size"], ship_state["position"])
+        print(warp_positions)
         thrust = thrust_tree(closure_rate, relative_heading)
         print(thrust)
         return thrust, turn_angle, False, True
