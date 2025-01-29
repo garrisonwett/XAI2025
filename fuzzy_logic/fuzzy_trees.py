@@ -51,7 +51,6 @@ def thrust_tree(closure = 0, heading = 0):
     thrust = ctrl.ControlSystemSimulation(thrust_ctrl)
 
     # 4. Pass inputs to the fuzzy system and compute the output
-    print(closure, heading)
     thrust.input['closure_rate'] = closure
     thrust.input['relative_heading'] = heading
     thrust.compute()

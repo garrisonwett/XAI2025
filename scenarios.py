@@ -24,7 +24,7 @@ scenarios: Dict[str, Scenario] = {
     ),
     "one_asteroid": Scenario(
         name="one_asteroid",
-        ship_states=[{"position": (400, 200), "angle": 0, "lives": 5, "team": 1,}],
+        ship_states=[{"position": (400, 400), "angle": 0, "lives": 5, "team": 1,}],
         asteroid_states=[
             {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}
         ],
@@ -38,6 +38,30 @@ scenarios: Dict[str, Scenario] = {
         ship_states=[{"position": (900, 225), "angle": 270, "lives": 5, "team": 1}],
         asteroid_states=[
             {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}
+        ],
+        map_size=(1200, 900),
+        time_limit=90,
+        ammo_limit_multiplier=0.0,
+        stop_if_no_ammo=False,
+    ),
+    "avoid": Scenario(
+        name="one_asteroid",
+        ship_states=[{"position": (1000, 200), "angle": 0, "lives": 5, "team": 1,}],
+        asteroid_states=[
+            {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}
+        ],
+        map_size=(1200, 900),
+        time_limit=90,
+        ammo_limit_multiplier=0.0,
+        stop_if_no_ammo=False,
+    ),
+    "aim_trainer": Scenario(
+        name="one_asteroid",
+        ship_states=[{"position": (600, 500), "angle": 359, "lives": 5, "team": 1,}],
+        asteroid_states=[
+            {"position": (200, 200), "angle": 0, "speed": 150, "size": 4},
+            {"position": (500, 200), "angle": 0, "speed": 150, "size": 4},
+            {"position": (800, 200), "angle": 0, "speed": 150, "size": 4}
         ],
         map_size=(1200, 900),
         time_limit=90,

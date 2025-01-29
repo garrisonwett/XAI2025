@@ -62,13 +62,34 @@ class FuzzyController(KesslerController):
             asteroid["radius"] for asteroid in game_state["asteroids"]
         ]
 
-        turn_angle = vm.turn_angle(
+
+
+        
+        relative_positions = vm.game_to_ship_frame(ship_state["position"], asteroid_positions, game_state["map_size"])
+
+        closest_asteroid_distance = 1000000
+        for i in range(len(relative_positions)):
+            distance_to_asteroid = vm.distance_to(relative_positions[i])
+            if distance_to_asteroid < closest_asteroid_distance:
+                closest_asteroid_distance = distance_to_asteroid
+                closest_asteroid_index = i
+        closest_asteroid_position = relative_positions[closest_asteroid_index]
+
+        print(f"Ship Position: {ship_state['position']}")
+        for i in range(len(relative_positions)):
+            print(f"Relative Position {i}: {relative_positions[i]}")
+        for i in range(len(relative_positions)):
+            print(f"Distance to Asteroid {i}: {vm.distance_to(relative_positions[i])}")
+        for i in range(len(asteroid_positions)):
+            print(f"Asteroid Position {i}: {asteroid_positions[i]}")
+
+        turn_angle, on_target = vm.turn_angle(
             ship_state["position"],
             ship_state["heading"],
             ship_state["turn_rate_range"],
             self.bullet_speed,
-            asteroid_positions[0],
-            asteroid_velocities[0],
+            asteroid_positions[closest_asteroid_index],
+            asteroid_velocities[closest_asteroid_index],
             game_state["delta_time"],
         )
 
@@ -77,7 +98,7 @@ class FuzzyController(KesslerController):
             ship_state["heading"],
             ship_state["speed"],
             ship_state["radius"],
-            asteroid_positions[0],
+            relative_positions[0],
             asteroid_velocities[0],
             asteroid_radii[0],
         )
@@ -85,19 +106,22 @@ class FuzzyController(KesslerController):
         relative_heading = vm.heading_relative_angle(
             ship_state["position"],
             ship_state["heading"],
-            asteroid_positions[0],
+            closest_asteroid_position,
         )
         
         closure_rate = vm.calculate_closure_rate(
             ship_state["position"],
             ship_state["heading"],
             ship_state["speed"],
-            asteroid_positions[0],
-            asteroid_velocities[0],
+            closest_asteroid_position,
+            asteroid_velocities[closest_asteroid_index],
         )
-        print(asteroid_positions[:])
-        warp_positions = vm.warp_asteroids(asteroid_positions, game_state["map_size"], ship_state["position"])
-        print(warp_positions)
+    
+
         thrust = thrust_tree(closure_rate, relative_heading)
-        print(thrust)
-        return thrust, turn_angle, False, True
+
+        shoot=False
+        if on_target == True:
+            shoot = True
+
+        return 0, turn_angle, shoot, False

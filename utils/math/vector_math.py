@@ -84,7 +84,7 @@ def turn_angle(
     asteroid_position: Tuple[float, float],
     asteroid_velocity: Tuple[float, float],
     delta_time: float,
-) -> float:
+) :
     """
     Calculate the angle the ship needs to turn to intercept a moving asteroid.
 
@@ -109,24 +109,28 @@ def turn_angle(
         )
         - ship_heading
     )
-    logger.debug(f"Angle delta: {angle_delta}")
-
+    
     # If the asteroid is already in the direction of the ship, no turn is needed
     if math.isclose(angle_delta, 0, abs_tol=1e-6):
-        return 0
-
+        return 0, True
     left_turn_rate, right_turn_rate = ship_turn_rate_range
+    left_turn_rate = left_turn_rate + 0.0001
+    right_turn_rate = right_turn_rate - 0.0001
     # Determine the appropriate turn rate
     if 0 < angle_delta < 180:
         if angle_delta < left_turn_rate * delta_time:
-            return left_turn_rate
+            return left_turn_rate, False
+        elif angle_delta < 1:
+            return angle_delta / delta_time, True
         else:
-            return angle_delta / delta_time
+            return angle_delta / delta_time, False
     else:
         if angle_delta > right_turn_rate * delta_time:
-            return right_turn_rate
+            return right_turn_rate, False
+        elif angle_delta > -1:
+            return angle_delta / delta_time, True
         else:
-            return angle_delta / delta_time
+            return angle_delta / delta_time, False
 
 def heading_and_speed_to_velocity(heading: float, speed: float) -> Tuple[float, float]:
 
@@ -215,13 +219,30 @@ def calculate_if_collide(
 
     return True, t_min
 
-def warp_asteroids(asteroid_positions, map_size, ship_position):
-    ship_x, ship_y = ship_position
-    width, height = map_size
-    for asteroid_x, asteroid_y in asteroid_positions:
-        if abs(asteroid_x - ship_x) > width / 2:
-            asteroid_x += width/2
-        if abs(asteroid_y - ship_y) > height / 2:
-            asteroid_y += height/2
-    warp_positions = [(asteroid_x, asteroid_y) for asteroid_x, asteroid_y in asteroid_positions]
-    return warp_positions
+def game_to_ship_frame(
+    position_vector: list[float, float],
+    asteroid_positions: Tuple[float, float],
+    game_size: list[float, float],
+) -> float:
+    map_x, map_y = game_size
+    old_x, old_y = position_vector
+    
+    relative_positions = []
+
+    for asteroid in range(len(asteroid_positions)):
+        ast_x, ast_y = asteroid_positions[asteroid]
+        dx = ast_x - old_x
+        dy = ast_y - old_y
+        if abs(dx) > map_x / 2:
+            dx -= map_x * dx / abs(dx)
+        if abs(dy) > map_y / 2:
+            dy -= map_y * dy / abs(dy)
+        relative_positions.append((dx, dy))
+        
+
+    return tuple(relative_positions)
+    
+def distance_to(relative_position):
+    dx, dy = relative_position
+    return math.sqrt(dx**2 + dy**2)
+
