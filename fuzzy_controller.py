@@ -8,7 +8,7 @@ from utils.math import vector_math as vm
 from fuzzy_logic.fuzzy_trees import thrust_tree
 if TYPE_CHECKING:
     from utils.types import ActionsReturn, GameState, ShipOwnState
-
+import time
 
 class FuzzyController(KesslerController):
     """
@@ -75,14 +75,6 @@ class FuzzyController(KesslerController):
                 closest_asteroid_index = i
         closest_asteroid_position = relative_positions[closest_asteroid_index]
 
-        print(f"Ship Position: {ship_state['position']}")
-        for i in range(len(relative_positions)):
-            print(f"Relative Position {i}: {relative_positions[i]}")
-        for i in range(len(relative_positions)):
-            print(f"Distance to Asteroid {i}: {vm.distance_to(relative_positions[i])}")
-        for i in range(len(asteroid_positions)):
-            print(f"Asteroid Position {i}: {asteroid_positions[i]}")
-
         turn_angle, on_target = vm.turn_angle(
             ship_state["position"],
             ship_state["heading"],
@@ -117,11 +109,18 @@ class FuzzyController(KesslerController):
             asteroid_velocities[closest_asteroid_index],
         )
     
+        # Calculate Fuzzy Computation Time
+
+        start_time = time.time()
 
         thrust = thrust_tree(closure_rate, relative_heading)
+
+        end_time = time.time()
+        computation_time = end_time - start_time
+        print(f"Computation Time: {computation_time}")
 
         shoot=False
         if on_target == True:
             shoot = True
 
-        return 0, turn_angle, shoot, False
+        return thrust, turn_angle, shoot, False

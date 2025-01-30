@@ -1,160 +1,138 @@
-import math
 import numpy as np
 import matplotlib.pyplot as plt
-import skfuzzy as fuzz
-from skfuzzy import control as ctrl
-
-def thrust_tree(closure = 0, heading = 0):
-    if heading % 1 == 0:
-        heading = heading + 0.0001
-
-    # 1. Define the fuzzy variables (Antecedents/Consequents) and their ranges
-    closure_rate = ctrl.Antecedent(np.arange(-1000, 1000, 1), 'closure_rate')
-    relative_heading = ctrl.Antecedent(np.arange(-45, 315, 1), 'relative_heading')
-    output_value = ctrl.Consequent(np.arange(-500, 500, 1), 'output_value')
-
-    closure_rate['negative'] = fuzz.trimf(closure_rate.universe, [-1000, -1000, 0])
-    closure_rate['zero'] = fuzz.trimf(closure_rate.universe, [-1000, 0, 1000])
-    closure_rate['positive'] = fuzz.trimf(closure_rate.universe, [0, 1000, 1000])
-
-    relative_heading['forward'] = fuzz.trimf(relative_heading.universe, [-45, 0, 45])
-    relative_heading['left'] = fuzz.trimf(relative_heading.universe, [45, 90, 135])
-    relative_heading['back'] = fuzz.trimf(relative_heading.universe, [135, 180, 225])
-    relative_heading['right'] = fuzz.trimf(relative_heading.universe, [225, 270, 315])
-
-    output_value['negative'] = fuzz.trimf(output_value.universe, [-500, -500, 0])
-    output_value['small_negative'] = fuzz.trimf(output_value.universe, [-500, -50, 0])
-    output_value['zero'] = fuzz.trimf(output_value.universe, [-500, 0, 500])
-    output_value['small_positive'] = fuzz.trimf(output_value.universe, [0, 50, 500])
-    output_value['positive'] = fuzz.trimf(output_value.universe, [0, 500, 500])
-
-    # 2. Define the fuzzy rules
-
-    rule1 = ctrl.Rule(closure_rate['negative'] & relative_heading['forward'], output_value['small_negative'])
-    rule2 = ctrl.Rule(closure_rate['negative'] & relative_heading['left'], output_value['zero'])
-    rule3 = ctrl.Rule(closure_rate['negative'] & relative_heading['back'], output_value['small_positive'])
-    rule4 = ctrl.Rule(closure_rate['negative'] & relative_heading['right'], output_value['zero'])
-
-    rule5 = ctrl.Rule(closure_rate['zero'] & relative_heading['forward'], output_value['small_negative'])
-    rule6 = ctrl.Rule(closure_rate['zero'] & relative_heading['left'], output_value['zero'])
-    rule7 = ctrl.Rule(closure_rate['zero'] & relative_heading['back'], output_value['small_positive'])
-    rule8 = ctrl.Rule(closure_rate['zero'] & relative_heading['right'], output_value['zero'])
-
-    rule9 = ctrl.Rule(closure_rate['positive'] & relative_heading['forward'], output_value['negative'])
-    rule10 = ctrl.Rule(closure_rate['positive'] & relative_heading['left'], output_value['zero'])
-    rule11 = ctrl.Rule(closure_rate['positive'] & relative_heading['back'], output_value['positive'])
-    rule12 = ctrl.Rule(closure_rate['positive'] & relative_heading['right'], output_value['zero'])
-
-    # 3. Define the fuzzy system
-
-    thrust_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8, rule9, rule10, rule11, rule12])
-    thrust = ctrl.ControlSystemSimulation(thrust_ctrl)
-
-    # 4. Pass inputs to the fuzzy system and compute the output
-    thrust.input['closure_rate'] = closure
-    thrust.input['relative_heading'] = heading
-    thrust.compute()
-    return thrust.output['output_value']
-
-
-# def aim_tree(nearest_10):
-
 import time
-import numpy as np
 
+def triangular_mf(x, a, b, c):
+    """
+    Returns the membership degree of x in a triangular fuzzy set 
+    with 'feet' at a and c and peak at b.
+    """
+    if x <= a or x >= c:
+        return 0.0
+    elif a < x < b:
+        return (x - a) / (b - a)
+    elif b <= x < c:
+        return (c - x) / (c - b)
+    else:
+        # covers x == b exactly
+        return 1.0
 
-class RuspiniZeroth3():
-    def __init__(self, mfs, rules):
-        """
-        mfs = [[0, c1, c2, ... 1],[0, c1, c2, ... 1],[ 0, c1, c2, ... 1 ],[...]] (center of each triangle)
-        rules = [v1, v2, ...]: values for each combo of rules (5x5 mf gives 25 rules)
-        """
-        mfs[mfs>=1.0] = 0.99999999
-        mfs[mfs<=0.0] = 0.00000001
-        rules[rules>=1.0] = 0.99999999
-        rules[rules<=0.0] = 0.00000001
-        zeros = np.zeros((len(mfs[:,0]),1))
-        mfs = np.transpose(np.concatenate((zeros, np.cumsum(mfs, axis=1)), axis=1))
-        norm_mfs = mfs * (1/np.max(mfs, axis=0))
-        self.mfs = np.transpose(norm_mfs)
-        self.rules = np.reshape(rules, (np.shape(self.mfs)[1], np.shape(self.mfs)[1], np.shape(self.mfs)[1]))
+def build_5_triangles(centers):
+    """
+    Builds 5 triangular MFs on [0,1].
+    
+    centers: array-like of length 3, e.g. [0.3, 0.5, 0.8]
+    
+    The 5 centers will be:
+      c0 = 0.0
+      c1 = centers[0]
+      c2 = centers[1]
+      c3 = centers[2]
+      c4 = 1.0
+      
+    Each triangle i uses:
+      peak = c[i]
+      left = midpoint(c[i-1], c[i])  (or clamped to 0 if i=0)
+      right = midpoint(c[i], c[i+1]) (or clamped to 1 if i=4)
+    """
+    if len(centers) != 3:
+        raise ValueError("centers must be an array of length 3.")
 
-    def CalcMem(self, ins):
-        # Replace values outside with 0 and 1 basically. We also hate 0 and 1 specifically.
-        ins = [max(min(0.999999999, i), 0.000000001) for i in ins]
-        mems = np.zeros(np.shape(self.mfs))
-        for i, mf in enumerate(self.mfs):
-            r = mf[0]
-            j = 1
-            while r <= ins[i]:
-                l = mf[j-1]
-                r = mf[j]
-                j += 1
-            mems[i][j-2] = (r - ins[i])/(r-l)
-            mems[i][j-1] = (ins[i] - l)/(r-l)
-        mem = np.outer(np.outer(mems[0],mems[1]), mems[2]).reshape(len(self.mfs[0]),len(self.mfs[0]),len(self.mfs[0]))
-        mr = np.multiply(mem, self.rules)
-        return np.sum(mr)/np.sum(mem)
+    c0 = 0.0
+    c1, c2, c3 = centers
+    c4 = 1.0
 
+    # list of centers
+    c = [c0, c1, c2, c3, c4]
 
-class RuspiniZeroth2():
-    def __init__(self, mfs, rules):
-        """
-        mfs = [[0, c1, c2, ... 1],[0, c1, c2, ... 1],[ 0, c1, c2, ... 1 ],[...]] (center of each triangle)
-        rules = [v1, v2, ...]: values for each combo of rules (5x5 mf gives 25 rules)
-        """
-        # Order centers of functions and change rule order to match indicies
-        mfs[mfs>=1.0] = 0.99999999
-        mfs[mfs<=0.0] = 0.00000001
-        rules[rules>=1.0] = 0.99999999
-        rules[rules<=0.0] = 0.00000001
-        zeros = np.zeros((len(mfs[:,0]),1))
-        mfs = np.transpose(np.concatenate((zeros, np.cumsum(mfs, axis=1)), axis=1))
-        norm_mfs = mfs * (1/np.max(mfs, axis=0))
-        self.mfs = np.transpose(norm_mfs)
-        self.rules = np.reshape(rules, (np.shape(self.mfs)[1], np.shape(self.mfs)[1]))
+    mfs = []
+    for i in range(5):
+        peak = c[i]
+        if i == 0:
+            left = c[0]  # clamp to 0
+        else:
+            left = 0.5 * (c[i-1] + c[i])  # midpoint of c[i-1] and c[i]
 
-    def CalcMem(self, ins):
-        mems = np.zeros(np.shape(self.mfs))
+        if i == 4:
+            right = c[4] # clamp to 1
+        else:
+            right = 0.5 * (c[i] + c[i+1]) # midpoint of c[i] and c[i+1]
 
-        if ins[0] <= 0.0: ins[0] = 0.000000000001
-        elif ins[0] >= 1.0: ins[0] = 0.999999999999
-        if ins[1] <= 0.0: ins[1] = 0.000000000001
-        elif ins[1] >= 1.0: ins[1] = 0.999999999999
+        # create a small lambda capturing the parameters
+        mf = lambda x, a=left, b=peak, cc=right: triangular_mf(x, a, b, cc)
+        mfs.append(mf)
 
-        for i, mf in enumerate(self.mfs):
-            r = mf[0]
-            j = 1
-            while r <= ins[i]:
-                l = mf[j-1]
-                r = mf[j]
-                j += 1
-            mems[i][j-2] = (r - ins[i])/(r-l)
-            mems[i][j-1] = (ins[i] - l)/(r-l)
-        mem = np.outer(mems[1],mems[0]).reshape(len(self.mfs[0]),len(self.mfs[0]))
-        mr = np.multiply(mem, self.rules)
-        return np.sum(mr)/np.sum(mem)
+    return mfs
 
+def plot_mfs(mfs, resolution=100000, x_range=(0, 1), title="Membership Functions"):
+    """
+    Plots the membership functions in mfs using matplotlib.
+
+    Parameters:
+    - mfs: list of membership functions (each mf is a callable: mf(x)->membership)
+    - resolution: number of points used to sample each MF
+    - x_range: the (min, max) range on the x-axis to sample
+    - title: plot title
+    """
+    x_vals = np.linspace(x_range[0], x_range[1], resolution)
+
+    plt.figure(figsize=(7,4))
+    for i, mf in enumerate(mfs):
+        y_vals = [mf(x) for x in x_vals]
+        plt.plot(x_vals, y_vals, label=f"MF {i}")
+
+    plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("Membership degree")
+    plt.ylim([0, 1])
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def tsk_inference(x1, x2, x1_mfs, x2_mfs):
+    """
+    Example TSK inference with 5 MFs for x1 and 5 for x2 => 25 rules.
+
+    Rule consequent is just y_ij = i + j for demonstration.
+    Weighted average used for final output.
+    """
+    numerator = 0.0
+    denominator = 0.0
+
+    # 5 MFs for x1, 5 MFs for x2 => 25 possible rule combinations
+    for i in range(5):
+        for j in range(5):
+            w_ij = x1_mfs[i](x1) * x2_mfs[j](x2)  # firing strength
+            y_ij = i + j                        # trivial consequent
+            numerator   += w_ij * y_ij
+            denominator += w_ij
+
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
 
 if __name__ == "__main__":
-    mf_r_flat = [0,0.6,0.4,0.8,1,0,0.4,0.5,0.7,1,0.0,0.1,0.2,0.3,1.0,.5,.6,.7,.8,.9,0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.0,0.1,0.2,0.3,0.4,0.0,0.1,0.2,0.3,0.4,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]
-    mfs = np.asarray([mf_r_flat[1:4], mf_r_flat[6:9]])
-    rules = np.asarray(mf_r_flat[10:26])
-
-    TestFIS = RuspiniZeroth2(mfs, rules)
-
     t = time.perf_counter()
-    for i in range(1):
-        ins = [0.6,0.3]
-        output = TestFIS.CalcMem(ins)
-    print((time.perf_counter() - t)/1)
+    # Example: define the 3 middle centers in [0,1].
+    centers = [0.25, 0.5, 0.75]
 
-    mfs = np.asarray([mf_r_flat[1:4], mf_r_flat[6:9], mf_r_flat[11:14]])
-    rules = np.asarray(mf_r_flat[15:79])
+    # Build membership functions for x1 and x2
+    x1_mfs = build_5_triangles(centers)
+    x2_mfs = build_5_triangles(centers)
 
-    TestFIS = RuspiniZeroth3(mfs, rules)
-    t = time.perf_counter()
-    for i in range(1):
-        ins = [0.6,0.3,0.35]
-        output = TestFIS.CalcMem(ins)
-    print((time.perf_counter() - t)/1)
+    # ---- VISUALIZE MEMBERSHIP FUNCTIONS ----
+    plot_mfs(x1_mfs, x_range=(0,1), title="x1 MFs")
+    plot_mfs(x2_mfs, x_range=(0,1), title="x2 MFs")
+
+    # ---- TEST THE TSK INFERENCE ----
+
+    # Test points
+    test_points = []
+    for i in range(100):
+        for j in range(100):
+            test_points.append((i/100, j/100))
+
+    for (xx1, xx2) in test_points:
+        y_out = tsk_inference(xx1, xx2, x1_mfs, x2_mfs)
+        print(f"x1={xx1:.2f}, x2={xx2:.2f} => y={y_out:.3f}")
+    print(f"Time taken: {time.perf_counter() - t:.6f} seconds")
