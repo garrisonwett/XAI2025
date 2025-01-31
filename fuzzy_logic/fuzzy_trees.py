@@ -1,12 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # Needed for 3D plotting
 import time
 
+t = time.time()
 def triangular_mf(x, a, b, c):
-    """
-    Returns the membership degree of x in a triangular fuzzy set 
-    with 'feet' at a and c and peak at b.
-    """
     if x <= a or x >= c:
         return 0.0
     elif a < x < b:
@@ -14,26 +12,12 @@ def triangular_mf(x, a, b, c):
     elif b <= x < c:
         return (c - x) / (c - b)
     else:
-        # covers x == b exactly
         return 1.0
 
 def build_5_triangles(centers):
     """
-    Builds 5 triangular MFs on [0,1].
-    
-    centers: array-like of length 3, e.g. [0.3, 0.5, 0.8]
-    
-    The 5 centers will be:
-      c0 = 0.0
-      c1 = centers[0]
-      c2 = centers[1]
-      c3 = centers[2]
-      c4 = 1.0
-      
-    Each triangle i uses:
-      peak = c[i]
-      left = midpoint(c[i-1], c[i])  (or clamped to 0 if i=0)
-      right = midpoint(c[i], c[i+1]) (or clamped to 1 if i=4)
+    Build 5 triangular MFs on [0,1].
+    centers: array of length 3 (e.g. [0.3, 0.5, 0.8]).
     """
     if len(centers) != 3:
         raise ValueError("centers must be an array of length 3.")
@@ -41,65 +25,34 @@ def build_5_triangles(centers):
     c0 = 0.0
     c1, c2, c3 = centers
     c4 = 1.0
-
-    # list of centers
     c = [c0, c1, c2, c3, c4]
 
     mfs = []
     for i in range(5):
         peak = c[i]
         if i == 0:
-            left = c[0]  # clamp to 0
+            left = c[0]
         else:
-            left = 0.5 * (c[i-1] + c[i])  # midpoint of c[i-1] and c[i]
+            left = 0.5 * (c[i-1] + c[i])
 
         if i == 4:
-            right = c[4] # clamp to 1
+            right = c[4]
         else:
-            right = 0.5 * (c[i] + c[i+1]) # midpoint of c[i] and c[i+1]
+            right = 0.5 * (c[i] + c[i+1])
 
-        # create a small lambda capturing the parameters
         mf = lambda x, a=left, b=peak, cc=right: triangular_mf(x, a, b, cc)
         mfs.append(mf)
 
     return mfs
 
-def plot_mfs(mfs, resolution=100000, x_range=(0, 1), title="Membership Functions"):
-    """
-    Plots the membership functions in mfs using matplotlib.
-
-    Parameters:
-    - mfs: list of membership functions (each mf is a callable: mf(x)->membership)
-    - resolution: number of points used to sample each MF
-    - x_range: the (min, max) range on the x-axis to sample
-    - title: plot title
-    """
-    x_vals = np.linspace(x_range[0], x_range[1], resolution)
-
-    plt.figure(figsize=(7,4))
-    for i, mf in enumerate(mfs):
-        y_vals = [mf(x) for x in x_vals]
-        plt.plot(x_vals, y_vals, label=f"MF {i}")
-
-    plt.title(title)
-    plt.xlabel("x")
-    plt.ylabel("Membership degree")
-    plt.ylim([0, 1])
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
 def tsk_inference(x1, x2, x1_mfs, x2_mfs):
     """
-    Example TSK inference with 5 MFs for x1 and 5 for x2 => 25 rules.
-
-    Rule consequent is just y_ij = i + j for demonstration.
-    Weighted average used for final output.
+    TSK inference with 5 MFs for x1, 5 MFs for x2 => 25 rules.
+    Rule consequent here is: y_ij = i + j (trivial).
     """
     numerator = 0.0
     denominator = 0.0
 
-    # 5 MFs for x1, 5 MFs for x2 => 25 possible rule combinations
     for i in range(5):
         for j in range(5):
             w_ij = x1_mfs[i](x1) * x2_mfs[j](x2)  # firing strength
@@ -111,28 +64,102 @@ def tsk_inference(x1, x2, x1_mfs, x2_mfs):
         return 0.0
     return numerator / denominator
 
-if __name__ == "__main__":
-    t = time.perf_counter()
-    # Example: define the 3 middle centers in [0,1].
-    centers = [0.25, 0.5, 0.75]
 
-    # Build membership functions for x1 and x2
+# --------------------------------------------------------------------------
+#                          VISUALIZATION FUNCTIONS
+# --------------------------------------------------------------------------
+
+def plot_mfs(mfs, x_range=(0,1), resolution=100, title="Membership Functions"):
+    """
+    Plots a set of membership functions (mfs) over x_range.
+    mfs: list of callable mfs, each mf(x) -> membership value in [0,1].
+    """
+    x_values = np.linspace(x_range[0], x_range[1], resolution)
+
+    plt.figure(figsize=(6,4))
+    for i, mf in enumerate(mfs):
+        y_values = [mf(x) for x in x_values]
+        plt.plot(x_values, y_values, label=f"MF {i}")
+
+    plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("Membership")
+    plt.ylim([-0.05, 1.05])
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_tsk_surface(x1_mfs, x2_mfs, resolution=50):
+    """
+    Plots the TSK output surface y = f(x1, x2) in 3D,
+    given two lists of 5 membership functions each (x1_mfs, x2_mfs).
+    
+    resolution: number of steps in [0,1] for x1, x2.
+    """
+    x1_vals = np.linspace(0, 1, resolution)
+    x2_vals = np.linspace(0, 1, resolution)
+    Z = np.zeros((resolution, resolution))
+
+    # Compute TSK output over a grid in (x1, x2)
+    for i, xv in enumerate(x1_vals):
+        for j, yv in enumerate(x2_vals):
+            Z[j, i] = tsk_inference(xv, yv, x1_mfs, x2_mfs)
+    
+    # Create 2D meshgrid for plotting
+    X1, X2 = np.meshgrid(x1_vals, x2_vals)
+
+    # --- 3D Surface Plot ---
+    fig = plt.figure(figsize=(8,5))
+    ax = fig.add_subplot(111, projection='3d')
+    surf = ax.plot_surface(X1, X2, Z, cmap='viridis', edgecolor='none')
+    ax.set_xlabel('x1')
+    ax.set_ylabel('x2')
+    ax.set_zlabel('TSK Output')
+    ax.set_title("TSK Output Surface")
+    fig.colorbar(surf, shrink=0.5, aspect=5)
+    plt.show()
+
+    # --- (Optional) 2D Contour Plot ---
+    # If you also want a contour view, uncomment below:
+    """
+    plt.figure(figsize=(6,4))
+    contour = plt.contourf(X1, X2, Z, cmap='viridis', levels=25)
+    plt.xlabel("x1")
+    plt.ylabel("x2")
+    plt.title("TSK Output Contour")
+    plt.colorbar(contour)
+    plt.show()
+    """
+
+
+# --------------------------------------------------------------------------
+#                          DEMO / MAIN
+# --------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    centers = [0.3, 0.5, 0.8]
     x1_mfs = build_5_triangles(centers)
     x2_mfs = build_5_triangles(centers)
 
-    # ---- VISUALIZE MEMBERSHIP FUNCTIONS ----
-    plot_mfs(x1_mfs, x_range=(0,1), title="x1 MFs")
-    plot_mfs(x2_mfs, x_range=(0,1), title="x2 MFs")
+    # Plot membership functions for x1 and x2
+    plot_mfs(x1_mfs, x_range=(0,1), title="x1 Membership Functions")
+    plot_mfs(x2_mfs, x_range=(0,1), title="x2 Membership Functions")
 
-    # ---- TEST THE TSK INFERENCE ----
+    # Show how the TSK output changes across x1,x2
+    plot_tsk_surface(x1_mfs, x2_mfs, resolution=50)
 
-    # Test points
-    test_points = []
-    for i in range(100):
-        for j in range(100):
-            test_points.append((i/100, j/100))
+    t = time.time()
+    # Test some points in [0,1]
+    test_points = [(0.0, 0.0),
+                   (0.1, 0.4),
+                   (0.3, 0.5),
+                   (0.6, 0.9),
+                   (1.0, 1.0)]
+    
+    print("Some TSK outputs at discrete points:\n")
+    for (x1, x2) in test_points:
+        y_out = tsk_inference(x1, x2, x1_mfs, x2_mfs)
+        print(f"x1={x1:.2f}, x2={x2:.2f} => y={y_out:.3f}")
 
-    for (xx1, xx2) in test_points:
-        y_out = tsk_inference(xx1, xx2, x1_mfs, x2_mfs)
-        print(f"x1={xx1:.2f}, x2={xx2:.2f} => y={y_out:.3f}")
-    print(f"Time taken: {time.perf_counter() - t:.6f} seconds")
+
+    print("Elapsed time:", time.time() - t)
