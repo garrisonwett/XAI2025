@@ -74,6 +74,8 @@ def heading_relative_angle(ship_position, ship_heading, asteroid_position):
 
     relative_angle = (angle - ship_heading) % 360
 
+    print(dx,dy,angle, relative_angle)
+
     return relative_angle
 
 def turn_angle(

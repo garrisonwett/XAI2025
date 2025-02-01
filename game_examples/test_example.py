@@ -42,7 +42,7 @@ if __name__ == "__main__":
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="aim_trainer",
+        default="random_repeatable",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
 

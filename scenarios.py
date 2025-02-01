@@ -48,7 +48,7 @@ scenarios: Dict[str, Scenario] = {
         name="one_asteroid",
         ship_states=[{"position": (1000, 200), "angle": 0, "lives": 5, "team": 1,}],
         asteroid_states=[
-            {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}
+            {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 2}
         ],
         map_size=(1200, 900),
         time_limit=90,
