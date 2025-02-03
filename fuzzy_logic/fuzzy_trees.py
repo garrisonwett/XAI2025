@@ -82,13 +82,13 @@ def tsk_inference(x1, x2, x1_mfs, x2_mfs, params):
         for j in range(len(x2_mfs)):
             w_ij = x1_mfs[i](x1) * x2_mfs[j](x2)  # Rule firing strength
             p1, p2 = params[i][j]
-            y_ij = -1*(p1 * abs(x1-0.5)-0.25) * p2 * x2        # Linear consequent
+            y_ij = p1 * x1 * p2 * x2        # Linear consequent
             numerator   += w_ij * y_ij
             denominator += w_ij
 
     if denominator == 0:
         return 0.0
-    return 700*numerator / denominator
+    return numerator / denominator
 
 # -------------------------------------------------------------------------
 #                        Visualization Functions
@@ -127,9 +127,19 @@ def plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50):
         params: Parameter matrix for the rule consequents.
         resolution: Number of grid points in [0,1] for x1 and x2.
     """
+    for i in range(num_rules_x1):
+        row = []
+        for j in range(num_rules_x2):
+            # Example: p0, p1, and p2 are chosen based on the rule indices.
+            p1 = 1
+            p2 = max(j-1,0)
+            row.append([p1, p2])
+        params.append(row)
+
     x1_vals = np.linspace(0.000001, 0.999999, resolution)
     x2_vals = np.linspace(0.000001, 0.99999, resolution)
     Z = np.zeros((resolution, resolution))
+
 
     # Compute TSK output over the grid
     for i, xv in enumerate(x1_vals):

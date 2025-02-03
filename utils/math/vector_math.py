@@ -74,8 +74,6 @@ def heading_relative_angle(ship_position, ship_heading, asteroid_position):
 
     relative_angle = (angle - ship_heading) % 360
 
-    print(dx,dy,angle, relative_angle)
-
     return relative_angle
 
 def turn_angle(
@@ -248,3 +246,10 @@ def distance_to(relative_position):
     dx, dy = relative_position
     return math.sqrt(dx**2 + dy**2)
 
+def sort_by_distance(asteroid_positions, ship_position):
+    distances = []
+    for i in range(len(asteroid_positions)):
+        dx = asteroid_positions[i][0] - ship_position[0]
+        dy = asteroid_positions[i][1] - ship_position[1]
+        distances.append(math.sqrt(dx**2 + dy**2))
+    return sorted(range(len(distances)), key=lambda k: distances[k])

@@ -66,7 +66,6 @@ class FuzzyController(KesslerController):
 
         
         relative_positions = vm.game_to_ship_frame(ship_state["position"], asteroid_positions, game_state["map_size"])
-
         closest_asteroid_distance = 1000000
         for i in range(len(relative_positions)):
             distance_to_asteroid = vm.distance_to(relative_positions[i])
@@ -74,6 +73,8 @@ class FuzzyController(KesslerController):
                 closest_asteroid_distance = distance_to_asteroid
                 closest_asteroid_index = i
         closest_asteroid_position = relative_positions[closest_asteroid_index]
+
+        relative_positions_sorted = vm.sort_by_distance(relative_positions,ship_state["position"])
 
         turn_angle, on_target = vm.turn_angle(
             ship_state["position"],
@@ -119,40 +120,32 @@ class FuzzyController(KesslerController):
         az_centers = [0.5] 
         closure_centers = [0.5]
         
+        distance_centers = [0.25,0.5,0.75]
+        thrust_fis_1_centers = [0.25,0.5,0.75]
 
         # You could also try: centers = [0.2, 0.4, 0.6, 0.9] (which yields 6 MFs)
 
         # Build membership functions for x1 and x2 based on the provided centers.
-        x1_mfs = build_triangles(az_centers)
-        x2_mfs = build_triangles(closure_centers)
-
+        az_mfs = build_triangles(az_centers)
+        closure_mfs = build_triangles(closure_centers)
+        distance_mfs = build_triangles(distance_centers)
+        thrust_fis_1_mfs = build_triangles(thrust_fis_1_centers)
         # Visualize the membership functions
-        # plot_mfs(x1_mfs, x_range=(0,1), title="x1 Membership Functions")
-        # plot_mfs(x2_mfs, x_range=(0,1), title="x2 Membership Functions")
+        # plot_mfs(az_mfs, x_range=(0,1), title="x1 Membership Functions")
+        # plot_mfs(closure_mfs, x_range=(0,1), title="x2 Membership Functions")
 
         # Set up realistic parameters for the TSK rule consequents.
         # For each rule, we assume a linear consequent: y = p0 + p1*x1 + p2*x2.
-        # Since the number of rules equals len(x1_mfs) x len(x2_mfs),
+        # Since the number of rules equals len(az_mfs) x len(closure_mfs),
         # we create a parameter matrix accordingly.
-        num_rules_x1 = len(x1_mfs)
-        num_rules_x2 = len(x2_mfs)
-        params = []
-        for i in range(num_rules_x1):
+        num_rules_x1 = len(az_mfs)
+        num_rules_x2 = len(closure_mfs)
+        num_rules_distance = len(distance_mfs)
+        num_rules_thrust_fis_1 = len(thrust_fis_1_mfs)
 
-            row = []
-            for j in range(num_rules_x2):
-                # Example: p0, p1, and p2 are chosen based on the rule indices.
-                p1 = 1 
-                p2 = max(j-1,0)
-                row.append([p1, p2])
-            params.append(row)
 
         # Normalize Inputs
-        print("\n")
-        print("--------------------------------------------")
 
-        print(turn_angle)
-        print(relative_heading, closure_rate)
         relative_heading = relative_heading / 360
         closure_rate = 1
         if relative_heading < 0.0001:
@@ -163,9 +156,47 @@ class FuzzyController(KesslerController):
             closure_rate = 0.001
         if closure_rate > 0.9999:
             closure_rate = 0.9999
-        print(relative_heading, closure_rate)
-        thrust = tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=x1_mfs, x2_mfs=x2_mfs, params=params)
-        print(thrust)
+
+        def f(x1, p1):
+            """
+            Computes f(x1) = -1 * (p1 * abs(x1 - 0.5) - 0.25)
+            in a piecewise manner, explicitly factoring out p1*x1.
+            """
+            if x1 < 0.5:
+                return p1 + (0.25 - 0.5 * p1)
+            else:
+                return -p1 + (0.25 + 0.5 * p1)
+
+        thrust_fis_1_params = []
+        for i in range(num_rules_x1):
+            row = []
+            for j in range(num_rules_x2):
+                # Example: p0, p1, and p2 are chosen based on the rule indices.
+                p1 = f(relative_heading, 1)
+                p2 = max(j-1,0)
+                row.append([p1, p2])
+            thrust_fis_1_params.append(row)
+
+
+        sorted_len = len(relative_positions_sorted)
+        thrust_fis_2_params = []
+        for i in range(num_rules_distance):
+            row = []
+            for j in range(num_rules_thrust_fis_1):
+                # Example: p0, p1, and p2 are chosen based on the rule indices.
+                p1 = 1
+                p2 = 1
+                row.append([p1, p2])
+            thrust_fis_2_params.append(row)
+        thrust_sum = 0
+        for i in range(min(10,sorted_len)):
+            distance = relative_positions_sorted[i]
+            distance_norm = max(50/(distance+0.0001),1)
+            thrust_fis_1 = tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
+            thrust_fis_2 = tsk_inference(x1=relative_positions_sorted[i], x2=thrust_fis_1, x1_mfs=distance_mfs, x2_mfs=thrust_fis_1_mfs, params=thrust_fis_2_params)
+            thrust_sum += thrust_fis_1
+        thrust = thrust_sum * 700
+
         end_time = time.time()
         computation_time = end_time - start_time
 
