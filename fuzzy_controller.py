@@ -74,7 +74,13 @@ class FuzzyController(KesslerController):
                 closest_asteroid_index = i
         closest_asteroid_position = relative_positions[closest_asteroid_index]
 
-        relative_positions_sorted = vm.sort_by_distance(relative_positions,ship_state["position"])
+        relative_positions_sorted_index = vm.sort_by_distance(relative_positions)
+        
+        relative_positions_sorted = []
+        for i in range(len(relative_positions_sorted_index)):
+            relative_positions_sorted.append(vm.distance_to(relative_positions[relative_positions_sorted_index[i]]))
+
+        print(relative_positions_sorted)
 
         turn_angle, on_target = vm.turn_angle(
             ship_state["position"],
@@ -179,22 +185,25 @@ class FuzzyController(KesslerController):
 
 
         sorted_len = len(relative_positions_sorted)
-        thrust_fis_2_params = []
-        for i in range(num_rules_distance):
-            row = []
-            for j in range(num_rules_thrust_fis_1):
-                # Example: p0, p1, and p2 are chosen based on the rule indices.
-                p1 = 1
-                p2 = 1
-                row.append([p1, p2])
-            thrust_fis_2_params.append(row)
+        # thrust_fis_2_params = []
+        # for i in range(num_rules_distance):
+        #     row = []
+        #     for j in range(num_rules_thrust_fis_1):
+        #         # Example: p0, p1, and p2 are chosen based on the rule indices.
+        #         p1 = i/5
+        #         p2 = 1
+        #         row.append([p1, p2])
+        #     thrust_fis_2_params.append(row)
+
+
         thrust_sum = 0
+        thrust_fis_1 = tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
         for i in range(min(10,sorted_len)):
             distance = relative_positions_sorted[i]
-            distance_norm = max(50/(distance+0.0001),1)
-            thrust_fis_1 = tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
-            thrust_fis_2 = tsk_inference(x1=relative_positions_sorted[i], x2=thrust_fis_1, x1_mfs=distance_mfs, x2_mfs=thrust_fis_1_mfs, params=thrust_fis_2_params)
-            thrust_sum += thrust_fis_1
+            distance_norm = min(50/(distance+0.0001),0.99999)
+            thrust_sum = distance_norm * tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
+            # thrust_fis_2 = tsk_inference(x1=distance_norm, x2=thrust_fis_1, x1_mfs=distance_mfs, x2_mfs=thrust_fis_1_mfs, params=thrust_fis_2_params)
+            thrust_sum += thrust_sum
         thrust = thrust_sum * 700
 
         end_time = time.time()

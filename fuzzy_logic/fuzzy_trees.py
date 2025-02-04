@@ -127,14 +127,7 @@ def plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50):
         params: Parameter matrix for the rule consequents.
         resolution: Number of grid points in [0,1] for x1 and x2.
     """
-    for i in range(num_rules_x1):
-        row = []
-        for j in range(num_rules_x2):
-            # Example: p0, p1, and p2 are chosen based on the rule indices.
-            p1 = 1
-            p2 = max(j-1,0)
-            row.append([p1, p2])
-        params.append(row)
+
 
     x1_vals = np.linspace(0.000001, 0.999999, resolution)
     x2_vals = np.linspace(0.000001, 0.99999, resolution)
@@ -152,8 +145,8 @@ def plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50):
     fig = plt.figure(figsize=(8,5))
     ax = fig.add_subplot(111, projection='3d')
     surf = ax.plot_surface(X1, X2, Z, cmap='viridis', edgecolor='none')
-    ax.set_xlabel('Az')
-    ax.set_ylabel('Closure')
+    ax.set_xlabel('X1')
+    ax.set_ylabel('X2')
     ax.set_zlabel('TSK Output')
     ax.set_title("TSK Output Surface")
     fig.colorbar(surf, shrink=0.5, aspect=5)
@@ -187,8 +180,8 @@ if __name__ == "__main__":
     x2_mfs = build_triangles(closure_centers)
 
     # Visualize the membership functions
-    # plot_mfs(x1_mfs, x_range=(0,1), title="x1 Membership Functions")
-    # plot_mfs(x2_mfs, x_range=(0,1), title="x2 Membership Functions")
+    plot_mfs(x1_mfs, x_range=(0,1), title="x1 Membership Functions")
+    plot_mfs(x2_mfs, x_range=(0,1), title="x2 Membership Functions")
 
     # Set up realistic parameters for the TSK rule consequents.
     # For each rule, we assume a linear consequent: y = p0 + p1*x1 + p2*x2.
@@ -198,23 +191,22 @@ if __name__ == "__main__":
     num_rules_x2 = len(x2_mfs)
     params = []
     for i in range(num_rules_x1):
-
         row = []
         for j in range(num_rules_x2):
             # Example: p0, p1, and p2 are chosen based on the rule indices.
-            p1 = 1 
-            p2 = max(j-1,0)
+            p1 = 1/(1+i)
+            p2 = 1/(1+j)
             row.append([p1, p2])
         params.append(row)
 
     # Visualize the TSK output surface in 3D.
-    plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50)
+    plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=5)
 
     # Test the TSK system at some discrete points.
     test_points = [(0.0, 0.0),
                    (0.1, 0.4),
                    (0.3, 0.5),
-                   (0.6, 0.9),
+                   (0.9, 0.9),
                    (1.0, 1.0)]
     
     print("TSK outputs at sample points:\n")

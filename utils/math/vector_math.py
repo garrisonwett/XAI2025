@@ -120,14 +120,14 @@ def turn_angle(
     if 0 < angle_delta < 180:
         if angle_delta < left_turn_rate * delta_time:
             return left_turn_rate, False
-        elif angle_delta < 1:
+        elif angle_delta < 3:
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False
     else:
         if angle_delta > right_turn_rate * delta_time:
             return right_turn_rate, False
-        elif angle_delta > -1:
+        elif angle_delta > -3:
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False
@@ -246,10 +246,10 @@ def distance_to(relative_position):
     dx, dy = relative_position
     return math.sqrt(dx**2 + dy**2)
 
-def sort_by_distance(asteroid_positions, ship_position):
+def sort_by_distance(asteroid_positions):
     distances = []
     for i in range(len(asteroid_positions)):
-        dx = asteroid_positions[i][0] - ship_position[0]
-        dy = asteroid_positions[i][1] - ship_position[1]
+        dx = asteroid_positions[i][0]
+        dy = asteroid_positions[i][1]
         distances.append(math.sqrt(dx**2 + dy**2))
     return sorted(range(len(distances)), key=lambda k: distances[k])
