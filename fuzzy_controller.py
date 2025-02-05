@@ -5,7 +5,7 @@ from kesslergame import KesslerController
 from utils import LoggerUtility
 from utils.kessler_helpers import get_bullet_speed
 from utils.math import vector_math as vm
-from fuzzy_logic.fuzzy_trees import tsk_inference, build_triangles
+from fuzzy_logic import fuzzy_trees as ft
 if TYPE_CHECKING:
     from utils.types import ActionsReturn, GameState, ShipOwnState
 import time
@@ -136,10 +136,10 @@ class FuzzyController(KesslerController):
         # You could also try: centers = [0.2, 0.4, 0.6, 0.9] (which yields 6 MFs)
 
         # Build membership functions for x1 and x2 based on the provided centers.
-        az_mfs = build_triangles(az_centers)
-        closure_mfs = build_triangles(closure_centers)
-        distance_mfs = build_triangles(distance_centers)
-        thrust_fis_1_mfs = build_triangles(thrust_fis_1_centers)
+        az_mfs = ft.build_triangles(az_centers)
+        closure_mfs = ft.build_triangles(closure_centers)
+        distance_mfs = ft.build_triangles(distance_centers)
+        thrust_fis_1_mfs = ft.build_triangles(thrust_fis_1_centers)
         # Visualize the membership functions
         # plot_mfs(az_mfs, x_range=(0,1), title="x1 Membership Functions")
         # plot_mfs(closure_mfs, x_range=(0,1), title="x2 Membership Functions")
@@ -201,11 +201,11 @@ class FuzzyController(KesslerController):
 
 
         thrust_sum = 0
-        thrust_fis_1 = tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
+        thrust_fis_1 = ft.tsk_inference_mult(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
         for i in range(min(asteroids_in_150,sorted_len)):
             distance = relative_positions_sorted[i]
             distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
-            thrust_sum = distance_norm * tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
+            thrust_sum = distance_norm * ft.tsk_inference_mult(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
             # thrust_fis_2 = tsk_inference(x1=distance_norm, x2=thrust_fis_1, x1_mfs=distance_mfs, x2_mfs=thrust_fis_1_mfs, params=thrust_fis_2_params)
             thrust_sum += thrust_sum
         thrust = thrust_sum * 700
