@@ -62,7 +62,7 @@ def build_triangles(centers):
 #             Realistic TSK Inference Function
 # -------------------------------------------------------------------------
 
-def tsk_inference(x1, x2, x1_mfs, x2_mfs, params):
+def tsk_inference_mult(x1, x2, x1_mfs, x2_mfs, params):
     """
     Computes the TSK output for inputs x1 and x2 using a rule base defined by the provided
     membership functions and parameter matrix.
@@ -83,6 +83,35 @@ def tsk_inference(x1, x2, x1_mfs, x2_mfs, params):
             w_ij = x1_mfs[i](x1) * x2_mfs[j](x2)  # Rule firing strength
             p1, p2 = params[i][j]
             y_ij = p1 * x1 * p2 * x2        # Linear consequent
+            numerator   += w_ij * y_ij
+            denominator += w_ij
+
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
+
+
+def tsk_inference_add(x1, x2, x1_mfs, x2_mfs, params):
+    """
+    Computes the TSK output for inputs x1 and x2 using a rule base defined by the provided
+    membership functions and parameter matrix.
+    
+    Each rule (for indices i, j) has a consequent of the form:
+        y_ij = p0 + p1*x1 + p2*x2
+    where params[i][j] = [p0, p1, p2].
+    
+    The overall output is the weighted average of the rule outputs, with weights equal to the
+    product of the corresponding membership degrees.
+    """
+    numerator = 0.0
+    denominator = 0.0
+
+    # Loop over all membership functions for x1 and x2 (the rule base)
+    for i in range(len(x1_mfs)):
+        for j in range(len(x2_mfs)):
+            w_ij = x1_mfs[i](x1) * x2_mfs[j](x2)  # Rule firing strength
+            p1, p2 = params[i][j]
+            y_ij = p1 * x1 + p2 * x2        # Linear consequent
             numerator   += w_ij * y_ij
             denominator += w_ij
 
@@ -211,5 +240,5 @@ if __name__ == "__main__":
     
     print("TSK outputs at sample points:\n")
     for (x1, x2) in test_points:
-        y_out = tsk_inference(x1, x2, x1_mfs, x2_mfs, params)
+        y_out = tsk_inference_mult(x1, x2, x1_mfs, x2_mfs, params)
         print(f"x1={x1:.2f}, x2={x2:.2f} => y={y_out:.3f}")
