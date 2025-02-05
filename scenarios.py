@@ -22,5 +22,68 @@ scenarios: Dict[str, Scenario] = {
         ammo_limit_multiplier=0.5,
         stop_if_no_ammo=True,
     ),
+    "one_asteroid": Scenario(
+        name="one_asteroid",
+        ship_states=[{"position": (250, 200), "angle": 0, "lives": 5, "team": 1,}],
+        asteroid_states=[
+            {"position": (200, 200), "angle": 0.0, "speed": 0.001, "size": 1}
+        ],
+        map_size=(1200, 900),
+        time_limit=90,
+        ammo_limit_multiplier=0.0,
+        stop_if_no_ammo=False,
+    ),
+    "collision_test": Scenario(
+        name="collision_test",
+        ship_states=[{"position": (900, 225), "angle": 270, "lives": 5, "team": 1}],
+        asteroid_states=[
+            {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}
+        ],
+        map_size=(1200, 900),
+        time_limit=90,
+        ammo_limit_multiplier=0.0,
+        stop_if_no_ammo=False,
+    ),
+    "avoid": Scenario(
+        name="one_asteroid",
+        ship_states=[{"position": (200, 200), "angle": 0, "lives": 5, "team": 1,}],
+        asteroid_states=[
+            {"position": (250, 200), "angle": 0.0, "speed": 0.001, "size": 1}
+        ],
+        map_size=(1200, 900),
+        time_limit=90,
+        ammo_limit_multiplier=0.0,
+        stop_if_no_ammo=False,
+    ),
+    "aim_trainer": Scenario(
+        name="one_asteroid",
+        ship_states=[{"position": (600, 500), "angle": 359, "lives": 5, "team": 1,}],
+        asteroid_states=[
+            {"position": (200, 200), "angle": 0, "speed": 150, "size": 4},
+            {"position": (500, 200), "angle": 0, "speed": 150, "size": 4},
+            {"position": (800, 200), "angle": 0, "speed": 150, "size": 4}
+        ],
+        map_size=(1200, 900),
+        time_limit=90,
+        ammo_limit_multiplier=0.0,
+        stop_if_no_ammo=False,
+    ),
+    "crush": Scenario(
+    name="crush",
+    asteroid_states=[
+        {"position": (200, 200), "angle": 50.0, "speed": 40},
+        {"position": (300, 200), "angle": 60.0, "speed": 40},
+        {"position": (400, 200), "angle": 70.0, "speed": 40},
+        {"position": (500, 200), "angle": 90.0, "speed": 40},
+        {"position": (600, 200), "angle": 110.0, "speed": 40},
+        {"position": (700, 200), "angle": 120.0, "speed": 40},
+        {"position": (800, 200), "angle": 130.0, "speed": 40},
+        {"position": (200,500), "angle": 0.0, "speed": 40},
+        {"position": (500, 200), "angle": 90.0, "speed": 40},
+        {"position": (800, 500), "angle": 180.0, "speed": 40},
+        {"position": (500, 800), "angle": 270.0, "speed": 40},
+    ],
+    ship_states=[{"position": (500, 500)}],
+    )
     # Add more scenarios here
 }

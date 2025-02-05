@@ -1,76 +1,97 @@
+import enum
 import logging
+from typing import Optional
 
 
-class Logger:
-    """A class to create and manage a logger with dynamic logging levels."""
+class LoggingLevel(enum.Enum):
+    """The logging levels supported by the logger utility."""
 
-    def __init__(self, name=__name__, debug=False):
+    DEBUG = logging.DEBUG
+    INFO = logging.INFO
+    WARNING = logging.WARNING
+    ERROR = logging.ERROR
+    CRITICAL = logging.CRITICAL
+
+
+class LoggerUtility:
+    """The logger utility class for logging messages and GPU memory information."""
+
+    _instance: Optional["LoggerUtility"] = None
+    _level: Optional[int] = None
+
+    def __new__(cls, level: LoggingLevel = LoggingLevel.INFO) -> "LoggerUtility":
         """
-        Initialize the logger with an optional debug mode.
+        Create a new instance of the logger utility if it does not exist. Otherwise, return the existing instance.
 
         Args:
-            name (`str`): Name of the logger. Default is `__name__`.
-            debug (`bool`): Whether to set the logger to debug mode or not. Default is `False`.
-        
+            level (`LoggingLevel`, optional): The logging level to set. Defaults to `LoggingLevel.INFO`.
+
         Returns:
-            `Logger`: Logger object with console handler.
+            `LoggerUtility`: The logger utility instance.
         """
-        self._name = name
-        self._debug = debug
-        self._logger = self._create_logger()
+        if cls._instance is None:
+            cls._instance = super(LoggerUtility, cls).__new__(cls)
+            cls._instance.__initialize(level)
+            cls._level = level.value
+        elif cls._level != level.value and cls._level > level.value:
+            cls._instance.__set_logging_level(level)
+            cls._level = level.value
+        return cls._instance
 
     def get_logger(self) -> logging.Logger:
-        """Getter method for the logger property."""
-        return self._logger
-    
-    def enable_debug(self) -> None:
-        """Enable the debug mode and recreate the logger."""
-        self._debug = True
-        self._logger = self._create_logger()
-
-    def _create_logger(self) -> logging.Logger:
         """
-        Create or recreate the logger based on the current debug setting.
-        
+        Get the logger instance.
+
         Returns:
-            `Logger`: Logger object with console handler.
+            `logging.Logger`: The logger instance.
         """
-        logger = logging.getLogger(self._name)
+        return self.logger
 
-        # Remove existing handlers to avoid duplication
-        if logger.hasHandlers():
-            logger.handlers.clear()
+    def __initialize(self, level: LoggingLevel) -> None:
+        """
+        Initializes the logger utility with the specified logging level.
 
-        # Set the appropriate logging level
-        logger.setLevel(logging.DEBUG if self._debug else logging.INFO)
+        Args:
+            level (`LoggingLevel`): Enum value for the logging level (e.g., LoggingLevel.INFO).
+        """
+        self.logger: logging.Logger = logging.getLogger(__name__)
+        self.__setup_logger(level)
 
-        # Create a handler for console output
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.DEBUG if self._debug else logging.INFO)
+    def __set_logging_level(self, level: LoggingLevel) -> None:
+        """
+        Set the logging level for the logger instance.
 
-        # Set formatter for the console output
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        console_handler.setFormatter(formatter)
+        Returns:
+            `logging.Logger`: The logger instance.
+        """
+        self.logger.setLevel(level.value)
+        for handler in self.logger.handlers:
+            handler.setLevel(level.value)
 
-        # Add handler to the logger
-        logger.addHandler(console_handler)
+    def __setup_logger(
+        self,
+        level: LoggingLevel,
+    ):
+        """
+        Set up the logger with the specified logging level.
 
-        return logger
+        Args:
+            level (`LoggingLevel`): Logging level as an enum value.
+        """
+        numeric_level = level.value
+        self.logger.setLevel(numeric_level)  # Set the logging level
 
-# Initialize the default logger
-default_logger = Logger()
+        # Avoid adding multiple handlers
+        if not self.logger.hasHandlers():
+            # Create a console handler
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(numeric_level)
 
-##
-## Example usage:
-##
-# from utils.logger import default_logger
+            # Create a formatter and set it for the handler
+            formatter = logging.Formatter(
+                "%(asctime)s - %(filename)s - %(levelname)s - %(message)s"
+            )
+            console_handler.setFormatter(formatter)
 
-# if __name__ == "__main__":
-#     log = default_logger.get_logger()
-#     log.info("Logger initialized with INFO level.")
-#     log.debug("This debug message won't show without enabling debug mode.")
-
-#     # Enable debug mode
-#     default_logger.enable_debug()
-#     log.debug("This is a debug message after enabling debug mode.")
-
+            # Add the handler to the logger
+            self.logger.addHandler(console_handler)
