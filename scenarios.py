@@ -24,9 +24,9 @@ scenarios: Dict[str, Scenario] = {
     ),
     "one_asteroid": Scenario(
         name="one_asteroid",
-        ship_states=[{"position": (400, 400), "angle": 0, "lives": 5, "team": 1,}],
+        ship_states=[{"position": (250, 200), "angle": 0, "lives": 5, "team": 1,}],
         asteroid_states=[
-            {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}
+            {"position": (200, 200), "angle": 0.0, "speed": 0.001, "size": 1}
         ],
         map_size=(1200, 900),
         time_limit=90,
@@ -46,9 +46,9 @@ scenarios: Dict[str, Scenario] = {
     ),
     "avoid": Scenario(
         name="one_asteroid",
-        ship_states=[{"position": (1000, 200), "angle": 0, "lives": 5, "team": 1,}],
+        ship_states=[{"position": (200, 200), "angle": 0, "lives": 5, "team": 1,}],
         asteroid_states=[
-            {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 2}
+            {"position": (250, 200), "angle": 0.0, "speed": 0.001, "size": 1}
         ],
         map_size=(1200, 900),
         time_limit=90,
