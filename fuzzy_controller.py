@@ -9,6 +9,7 @@ from fuzzy_logic.fuzzy_trees import tsk_inference, build_triangles
 if TYPE_CHECKING:
     from utils.types import ActionsReturn, GameState, ShipOwnState
 import time
+import math
 
 class FuzzyController(KesslerController):
     """
@@ -67,8 +68,11 @@ class FuzzyController(KesslerController):
         
         relative_positions = vm.game_to_ship_frame(ship_state["position"], asteroid_positions, game_state["map_size"])
         closest_asteroid_distance = 1000000
+        asteroids_in_150 = 0
         for i in range(len(relative_positions)):
             distance_to_asteroid = vm.distance_to(relative_positions[i])
+            if distance_to_asteroid < 150:
+                asteroids_in_150 += 1
             if distance_to_asteroid < closest_asteroid_distance:
                 closest_asteroid_distance = distance_to_asteroid
                 closest_asteroid_index = i
@@ -198,9 +202,9 @@ class FuzzyController(KesslerController):
 
         thrust_sum = 0
         thrust_fis_1 = tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
-        for i in range(min(10,sorted_len)):
+        for i in range(min(asteroids_in_150,sorted_len)):
             distance = relative_positions_sorted[i]
-            distance_norm = min(50/(distance+0.0001),0.99999)
+            distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
             thrust_sum = distance_norm * tsk_inference(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
             # thrust_fis_2 = tsk_inference(x1=distance_norm, x2=thrust_fis_1, x1_mfs=distance_mfs, x2_mfs=thrust_fis_1_mfs, params=thrust_fis_2_params)
             thrust_sum += thrust_sum
