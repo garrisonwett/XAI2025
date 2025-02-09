@@ -71,17 +71,11 @@ scenarios: Dict[str, Scenario] = {
     "crush": Scenario(
     name="crush",
     asteroid_states=[
-        {"position": (200, 200), "angle": 50.0, "speed": 40},
-        {"position": (300, 200), "angle": 60.0, "speed": 40},
-        {"position": (400, 200), "angle": 70.0, "speed": 40},
-        {"position": (500, 200), "angle": 90.0, "speed": 40},
-        {"position": (600, 200), "angle": 110.0, "speed": 40},
-        {"position": (700, 200), "angle": 120.0, "speed": 40},
-        {"position": (800, 200), "angle": 130.0, "speed": 40},
-        {"position": (200,500), "angle": 0.0, "speed": 40},
-        {"position": (500, 200), "angle": 90.0, "speed": 40},
-        {"position": (800, 500), "angle": 180.0, "speed": 40},
-        {"position": (500, 800), "angle": 270.0, "speed": 40},
+        {"position": (200, 200), "angle": 50.0, "speed": 40, "size": 4},
+        {"position": (300, 200), "angle": 60.0, "speed": 40, "size": 3},
+        {"position": (400, 200), "angle": 70.0, "speed": 40, "size": 2},
+        {"position": (500, 200), "angle": 90.0, "speed": 40, "size": 1},
+        
     ],
     ship_states=[{"position": (500, 500)}],
     )

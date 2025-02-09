@@ -166,7 +166,7 @@ def plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50):
     # Compute TSK output over the grid
     for i, xv in enumerate(x1_vals):
         for j, yv in enumerate(x2_vals):
-            Z[j, i] = tsk_inference(xv, yv, x1_mfs, x2_mfs, params)
+            Z[j, i] = tsk_inference_mult(xv, yv, x1_mfs, x2_mfs, params)
 
     X1, X2 = np.meshgrid(x1_vals, x2_vals)
 
