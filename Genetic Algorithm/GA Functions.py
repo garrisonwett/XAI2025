@@ -116,7 +116,7 @@ def mutate(parent, MUTATION_RATE):
 # 4. Main GA Loop
 # ----------------------------
 
-def genetic_algorithm(POPULATION_SIZE = 7,MAX_GENERATIONS = 7, MUTATION_RATE   = 0.1,CROSSOVER_RATE  = 0.9, K=10):
+def genetic_algorithm(POPULATION_SIZE = 15,MAX_GENERATIONS = 20, MUTATION_RATE   = 0.1,CROSSOVER_RATE  = 0.9, K=10):
     # 1. Initialize population
     population = [create_random_individual() for _ in range(POPULATION_SIZE)]
     # Track best solution
