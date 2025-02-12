@@ -71,7 +71,7 @@ class FuzzyController(KesslerController):
         asteroids_in_distance = 0
 
 
-        
+        # Determine the closest asteroid and the number of asteroids in a certain distance
         for i in range(len(relative_positions)):
             distance_to_asteroid = vm.distance_to(relative_positions[i])
             if distance_to_asteroid < 300:
@@ -90,6 +90,8 @@ class FuzzyController(KesslerController):
         
         relative_distance_sorted = []
         asteroid_radii_sorted = []
+
+        # Sort the asteroids by distance to the ship
         for i in range(len(relative_positions_sorted_index)):
             relative_distance_sorted.append(vm.distance_to(relative_positions[relative_positions_sorted_index[i]]))
             asteroid_radii_sorted.append(asteroid_radii[relative_positions_sorted_index[i]])
@@ -159,7 +161,7 @@ class FuzzyController(KesslerController):
             asteroid_radii[i] = asteroid_radii[i] / 32
         
 
-
+        # We dont want values at 0 or 1 as those are the bounds of the MFs
         if relative_heading < 0.0001:
             relative_heading = 0.001
         if relative_heading > 0.9999:
@@ -169,6 +171,8 @@ class FuzzyController(KesslerController):
         if closure_rate > 0.9999:
             closure_rate = 0.9999
 
+
+        # Could use a renaming and maybe moved to a utils file?
         def f(x1, p1):
             """
             Computes f(x1) = -1 * (p1 * abs(x1 - 0.5) - 0.25)
@@ -179,7 +183,11 @@ class FuzzyController(KesslerController):
             else:
                 return -p1 + (0.25 + 0.5 * p1)
 
+
+        # Just to allow for collapsing
         if True:
+
+            # Generates the paramers p1 and p2 for each rule association in the FIS
             thrust_fis_1_params = []
 
             for i in range(num_rules_az):
@@ -197,7 +205,7 @@ class FuzzyController(KesslerController):
             sorted_len = len(relative_distance_sorted)
 
         
-        
+            # Calculates the thrust for each rule and sums them up
             for i in range(min(asteroids_in_distance,sorted_len)):
                 distance = relative_distance_sorted[i]
                 distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
@@ -233,6 +241,8 @@ class FuzzyController(KesslerController):
 
         # Aim FIS 1.1 (in: Heading [deg.], Closure rate | out: threat level[-1,1])
 
+
+        #WIP
         threat_sum = 0
         for i in range(sorted_len):
             distance = relative_distance_sorted[i]
@@ -292,7 +302,7 @@ class FuzzyController(KesslerController):
         )
 
 
-    
+        # Checks if it is on target to maintain accuracy
         shoot=False
         if on_target == True:
             shoot = True
