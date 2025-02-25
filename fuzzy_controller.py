@@ -49,7 +49,7 @@ class FuzzyController(KesslerController):
         return self.msg
 
     def actions(
-        self, chromosome, ship_state: "ShipOwnState", game_state: "GameState"
+        self, ship_state: "ShipOwnState", game_state: "GameState"
     ) -> "ActionsReturn":
         """The actions method for the fuzzy controller."""
 
@@ -134,8 +134,8 @@ class FuzzyController(KesslerController):
 
 
         # Define your "middle" centers 
-        az_centers = chromosome[0:2]
-        closure_centers = chromosome[3:5]
+        az_centers = [0.25, 0.5, 0.75]
+        closure_centers = [0.25, 0.5, 0.75]
         size_centers = [0.5]
         distance_centers = [0.5]
 

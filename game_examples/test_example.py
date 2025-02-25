@@ -50,7 +50,7 @@ if __name__ == "__main__":
         "--game_type",
         choices=["KesslerGame", "TrainerEnvironment"],
         type=str,
-        default="TrainerEnvironment",
+        default="KesslerGame",
         help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for max-speed, no-graphics simulation.",
     )
 
@@ -65,10 +65,9 @@ if __name__ == "__main__":
             game = TrainerEnvironment(settings=game_settings)
 
     logger.info(f"Running scenario: {selected_scenario.name}")
-    chromosome = None
     initial_time = time.perf_counter()
     score, perf_data = game.run(
-        chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
+        scenario=selected_scenario, controllers=[FuzzyController()]
     )
 
     print("Total scenario eval time: ", str(time.perf_counter() - initial_time))

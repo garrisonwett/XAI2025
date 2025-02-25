@@ -158,6 +158,10 @@ def plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50):
     """
 
 
+
+
+
+
     x1_vals = np.linspace(0.000001, 0.999999, resolution)
     x2_vals = np.linspace(0.000001, 0.99999, resolution)
     Z = np.zeros((resolution, resolution))
@@ -198,8 +202,8 @@ def plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50):
 
 if __name__ == "__main__":
     # Define your "middle" centers (they don't need to be fixed in number)
-    az_centers = [0.5] 
-    closure_centers = [0.5]
+    az_centers = [0.25, 0.5, 0.75] 
+    closure_centers = [0.25, 0.5, 0.75]
     
 
     # You could also try: centers = [0.2, 0.4, 0.6, 0.9] (which yields 6 MFs)
@@ -218,6 +222,17 @@ if __name__ == "__main__":
     # we create a parameter matrix accordingly.
     num_rules_x1 = len(x1_mfs)
     num_rules_x2 = len(x2_mfs)
+
+    def f(x1, p1):
+        """
+        Computes f(x1) = -1 * (p1 * abs(x1 - 0.5) - 0.25)
+        in a piecewise manner, explicitly factoring out p1*x1.
+        """
+        if x1 < 0.5:
+            return p1 + (0.25 - 0.5 * p1)
+        else:
+            return -p1 + (0.25 + 0.5 * p1)
+
     params = []
     for i in range(num_rules_x1):
         row = []
