@@ -136,8 +136,8 @@ class FuzzyController(KesslerController):
         # Define your "middle" centers 
         az_centers = [0.25, 0.5, 0.75]
         closure_centers = [0.25, 0.5, 0.75]
-        size_centers = [0.5]
-        distance_centers = [0.5]
+        size_centers = [0.25, 0.5, 0.75]
+        distance_centers = [0.25, 0.5, 0.75]
 
         # Build membership functions for x1 and x2 based on the provided centers.
         az_mfs = ft.build_triangles(az_centers)
@@ -157,8 +157,8 @@ class FuzzyController(KesslerController):
 
         relative_heading = relative_heading / 360
         closure_rate = 1
-        for i in range(len(asteroid_radii)):
-            asteroid_radii[i] = asteroid_radii[i] / 32
+        # for i in range(len(asteroid_radii)):
+        #     asteroid_radii_sorted[i] = asteroid_radii_sorted[i] / 32
         
 
         # We dont want values at 0 or 1 as those are the bounds of the MFs
@@ -182,6 +182,14 @@ class FuzzyController(KesslerController):
                 return p1 + (0.25 - 0.5 * p1)
             else:
                 return -p1 + (0.25 + 0.5 * p1)
+        
+        def dist_piece(x1):
+            if x1 < 0.25:
+                return 1 - 4*x1
+            elif x1 < 0.6:
+                return 0.75 - (x1-0.6)/0.4
+            else:
+                return 0.75 - (x1-0.6)/0.4
 
 
         # Just to allow for collapsing
@@ -214,16 +222,16 @@ class FuzzyController(KesslerController):
             thrust = thrust_sum * 700
 
 
-        # aim_fis_1_2_params = []
-        # # Generate the parameters for the TSK system - Aim 1.2 
-        # for i in range(num_rules_size):
-        #     row = []
-        #     for j in range(num_rules_distance):
-        #         p1 = f(asteroid_radii[i]/len(asteroid_radii), 1)
-        #         p2 = f(relative_distance_sorted[i]/math.sqrt(min(50/(relative_distance_sorted[i]+0.0001),0.99999)),1)
-        #         row.append([p1, p2])
+        aim_fis_1_2_params = []
+        # Generate the parameters for the TSK system - Aim 1.2 
+        for i in range(num_rules_size):
+            row = []
+            for j in range(num_rules_distance):
+                p1 = 1
+                p2 = 1
+                row.append([p1, p2])
                 
-        #     aim_fis_1_2_params.append(row)
+            aim_fis_1_2_params.append(row)
         # print(aim_fis_1_2_params)
         
         # aim_fis_2_params = []
@@ -256,17 +264,19 @@ class FuzzyController(KesslerController):
 
 
         # Aim FIS 1.2 (in: Asteroid Size, Distance | out: hit chance)
-        
-        # aim_sum = 0
-        # for i in range(sorted_len):
-        #     distance = relative_distance_sorted[i]
-        #     distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
-        #     # print(asteroid_radii[i])
-        #     aim_sum =  distance_norm* ft.tsk_inference_mult(x1=asteroid_radii_sorted[i], x2=distance_norm, x1_mfs=size_mfs, x2_mfs=distance_mfs, params=aim_fis_1_2_params)
-        #     aim_sum += aim_sum
-        # aim = aim_sum
+        aim_sum = 0
+        for i in range(sorted_len):
+            distance = relative_distance_sorted[i]
+            radii = 1/asteroid_radii_sorted[i]
+            distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
+            radii_norm = radii * 8
+            # print(radii_norm)
+            # print(distance_norm)
+            aim_sum =  distance_norm * ft.tsk_inference_mult(x1=radii_norm, x2=distance_norm, x1_mfs=size_mfs, x2_mfs=distance_mfs, params=aim_fis_1_2_params)
+            aim_sum += aim_sum
+        aim = aim_sum
         # ft.plot_tsk_surface(x1_mfs=size_mfs, x2_mfs=distance_mfs, params=aim_fis_1_2_params, resolution=50)
-        # print(aim)
+        print(aim)
         
 
         # # Aim FIS 2
