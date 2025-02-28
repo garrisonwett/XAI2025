@@ -24,7 +24,7 @@ scenarios: Dict[str, Scenario] = {
     ),
     "one_asteroid": Scenario(
         name="one_asteroid",
-        ship_states=[{"position": (400, 400), "angle": 0, "lives": 5, "team": 1,}],
+        ship_states=[{"position": (600, 200), "angle": 0, "lives": 5, "team": 1,}],
         asteroid_states=[
             {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}
         ],

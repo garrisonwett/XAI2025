@@ -11,6 +11,9 @@ if TYPE_CHECKING:
 import time
 import math
 
+from fuzzy_logic.mamdani_test import MamdaniFIS
+
+
 class FuzzyController(KesslerController):
     """
     The main class for the fuzzy controller.
@@ -96,15 +99,15 @@ class FuzzyController(KesslerController):
             relative_distance_sorted.append(vm.distance_to(relative_positions[relative_positions_sorted_index[i]]))
             asteroid_radii_sorted.append(asteroid_radii[relative_positions_sorted_index[i]])
         
-        # turn_angle, on_target = vm.turn_angle(
-        #     ship_state["position"],
-        #     ship_state["heading"],
-        #     ship_state["turn_rate_range"],
-        #     self.bullet_speed,
-        #     asteroid_positions[closest_asteroid_index], 
-        #     asteroid_velocities[closest_asteroid_index],
-        #     game_state["delta_time"],
-        # )
+        turn_angle, on_target = vm.turn_angle(
+            ship_state["position"],
+            ship_state["heading"],
+            ship_state["turn_rate_range"],
+            self.bullet_speed,
+            asteroid_positions[closest_asteroid_index], 
+            asteroid_velocities[closest_asteroid_index],
+            game_state["delta_time"],
+        )
 
         collide, collide_time = vm.calculate_if_collide(
             ship_state["position"],
@@ -134,172 +137,239 @@ class FuzzyController(KesslerController):
 
 
         # Define your "middle" centers 
-        az_centers = [0.25, 0.5, 0.75]
-        closure_centers = [0.25, 0.5, 0.75]
+        az_centers = [0.5]
+        closure_centers = [0.5]
+        az_closure_out_centers = [0.5]
+
         size_centers = [0.5]
         distance_centers = [0.5]
 
-        # Build membership functions for x1 and x2 based on the provided centers.
-        az_mfs = ft.build_triangles(az_centers)
-        closure_mfs = ft.build_triangles(closure_centers)
-        size_mfs = ft.build_triangles(size_centers)
-        distance_mfs = ft.build_triangles(distance_centers)
-
-        # ft.plot_mfs(distance_mfs)
-
-        num_rules_az = len(az_mfs)
-        num_rules_closure = len(closure_mfs)
-        num_rules_size = len(size_mfs)
-        num_rules_distance = len(distance_mfs)
 
 
-        # Normalize Inputs
 
+
+
+        # THRUST FIS STRUCTURE 
+
+            # Preprocessing
+
+        
         relative_heading = relative_heading / 360
-        closure_rate = 1
-        for i in range(len(asteroid_radii)):
-            asteroid_radii[i] = asteroid_radii[i] / 32
-        
+        closure_rate = closure_rate
 
-        # We dont want values at 0 or 1 as those are the bounds of the MFs
-        if relative_heading < 0.0001:
-            relative_heading = 0.001
-        if relative_heading > 0.9999:
-            relative_heading = 0.9999
-        if closure_rate < 0.0001:
-            closure_rate = 0.001
-        if closure_rate > 0.9999:
-            closure_rate = 0.9999
+        print(relative_heading)
+        print(closure_rate)
 
+        closure_rate = max(0,min(0.9999,(closure_rate/200)))
 
-        # Could use a renaming and maybe moved to a utils file?
-        def f(x1, p1):
-            """
-            Computes f(x1) = -1 * (p1 * abs(x1 - 0.5) - 0.25)
-            in a piecewise manner, explicitly factoring out p1*x1.
-            """
-            if x1 < 0.5:
-                return p1 + (0.25 - 0.5 * p1)
-            else:
-                return -p1 + (0.25 + 0.5 * p1)
+        thrust_fis = MamdaniFIS(output_range=(0,1), n_points=1000)
 
+        thrust_fis.add_input_triangles("azimuth", az_centers, domain=(0, 1))
+        thrust_fis.add_input_triangles("closure_rate", closure_centers, domain=(0, 1))
+        thrust_fis.add_output_triangles(az_closure_out_centers, domain=(0,1))
 
-        # Just to allow for collapsing
-        if True:
+        thrust_fis.add_rule({'azimuth': 'mf_0', 'closure_rate': 'mf_0'}, 'mf_1')
+        thrust_fis.add_rule({'azimuth': 'mf_1', 'closure_rate': 'mf_0'}, 'mf_1')
+        thrust_fis.add_rule({'azimuth': 'mf_2', 'closure_rate': 'mf_0'}, 'mf_1')
 
-            # Generates the paramers p1 and p2 for each rule association in the FIS
-            thrust_fis_1_params = []
+        thrust_fis.add_rule({'azimuth': 'mf_0', 'closure_rate': 'mf_1'}, 'mf_1')
+        thrust_fis.add_rule({'azimuth': 'mf_1', 'closure_rate': 'mf_1'}, 'mf_1')
+        thrust_fis.add_rule({'azimuth': 'mf_2', 'closure_rate': 'mf_1'}, 'mf_1')
 
-            for i in range(num_rules_az):
-                row = []
-                for j in range(num_rules_closure):
-                    # Example: p0, p1, and p2 are chosen based on the rule indices.
-                    p1 = f(relative_heading, 1)
-                    p2 = max(j-1,0)
-                    row.append([p1, p2])
-                thrust_fis_1_params.append(row)
+        thrust_fis.add_rule({'azimuth': 'mf_0', 'closure_rate': 'mf_2'}, 'mf_0')
+        thrust_fis.add_rule({'azimuth': 'mf_1', 'closure_rate': 'mf_2'}, 'mf_2')
+        thrust_fis.add_rule({'azimuth': 'mf_2', 'closure_rate': 'mf_2'}, 'mf_0')
 
-                    # Thrust FIS
-            thrust_sum = 0
-            
-            sorted_len = len(relative_distance_sorted)
-
-        
-            # Calculates the thrust for each rule and sums them up
-            for i in range(min(asteroids_in_distance,sorted_len)):
-                distance = relative_distance_sorted[i]
-                distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
-                thrust_sum = distance_norm * ft.tsk_inference_mult(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
-                thrust_sum += thrust_sum
-            thrust = thrust_sum * 700
-
-
-        # aim_fis_1_2_params = []
-        # # Generate the parameters for the TSK system - Aim 1.2 
-        # for i in range(num_rules_size):
-        #     row = []
-        #     for j in range(num_rules_distance):
-        #         p1 = f(asteroid_radii[i]/len(asteroid_radii), 1)
-        #         p2 = f(relative_distance_sorted[i]/math.sqrt(min(50/(relative_distance_sorted[i]+0.0001),0.99999)),1)
-        #         row.append([p1, p2])
-                
-        #     aim_fis_1_2_params.append(row)
-        # print(aim_fis_1_2_params)
-        
-        # aim_fis_2_params = []
-        # # Generate the parameters for the TSK system - Aim 2 
-        # for i in range(num_rules_az):
-        #     row = []
-        #     for j in range(num_rules_closure):
-        #         p1 = f(asteroid_radii[i]/len(asteroid_radii), 1)
-        #         p2 = max(j-1,0)
-        #         row.append([p1, p2])
-                
-        #     aim_fis_2_params.append(row)
-
-
-
-        # Aim FIS 1.1 (in: Heading [deg.], Closure rate | out: threat level[-1,1])
-
-
-        #WIP
-        threat_sum = 0
-        for i in range(sorted_len):
+        result = thrust_fis.infer({'azimuth': relative_heading, 'closure_rate': closure_rate})
+        thrust_sum = 0
+        for i in range(min(asteroids_in_distance, 10)):
             distance = relative_distance_sorted[i]
             distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
-            # print(relative_heading)
-            threat_sum = distance_norm * ft.tsk_inference_mult(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
-            threat_sum += threat_sum
-        
-        threat = threat_sum
-        
+            thrust_sum = distance_norm * (thrust_fis.infer({'azimuth': relative_heading, 'closure_rate': closure_rate}) - 0.4) * 10000
+            thrust_sum += thrust_sum
+        thrust = thrust_sum
 
 
-        # Aim FIS 1.2 (in: Asteroid Size, Distance | out: hit chance)
-        
-        # aim_sum = 0
-        # for i in range(sorted_len):
-        #     distance = relative_distance_sorted[i]
-        #     distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
-        #     # print(asteroid_radii[i])
-        #     aim_sum =  distance_norm* ft.tsk_inference_mult(x1=asteroid_radii_sorted[i], x2=distance_norm, x1_mfs=size_mfs, x2_mfs=distance_mfs, params=aim_fis_1_2_params)
-        #     aim_sum += aim_sum
-        # aim = aim_sum
-        # ft.plot_tsk_surface(x1_mfs=size_mfs, x2_mfs=distance_mfs, params=aim_fis_1_2_params, resolution=50)
-        # print(aim)
-        
+        print(thrust)
 
-        # # Aim FIS 2
-        # best_asteroid_index = -1  # Default value if no asteroid is found
-        # best_aim_score = float('-inf')  # Initialize with a very low value
-        # for i in range(sorted_len):
-        #     # Compute fuzzy inference output (aim score)
-        #     aim_score = ft.tsk_inference_mult(
-        #         x1=aim, x2=threat, 
-        #         x1_mfs=size_mfs, x2_mfs=distance_mfs, 
-        #         params=aim_fis_2_params)
 
-        #     # Check if this asteroid has the highest aim score
-        #     if aim_score > best_aim_score:
-        #         best_aim_score = aim_score
-        #         best_asteroid_index = i  # Store the index of the best asteroid
+
+
+        print("")
 
 
 
 
 
-        # The output is now the index of the chosen asteroid
-        chosen_asteroid_index = closest_asteroid_index
-        
-        turn_angle, on_target = vm.turn_angle(
-            ship_state["position"],
-            ship_state["heading"],
-            ship_state["turn_rate_range"],
-            self.bullet_speed,
-            asteroid_positions[chosen_asteroid_index], 
-            asteroid_velocities[chosen_asteroid_index],
-            game_state["delta_time"],
-        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if True:
+            freaky_number = 1
+            # # Build membership functions for x1 and x2 based on the provided centers.
+            # az_mfs = ft.build_triangles(az_centers)
+            # closure_mfs = ft.build_triangles(closure_centers)
+            # size_mfs = ft.build_triangles(size_centers)
+            # distance_mfs = ft.build_triangles(distance_centers)
+
+            # # ft.plot_mfs(distance_mfs)
+
+            # num_rules_az = len(az_mfs)
+            # num_rules_closure = len(closure_mfs)
+            # num_rules_size = len(size_mfs)
+            # num_rules_distance = len(distance_mfs)
+
+
+            # # Normalize Inputs
+
+            # relative_heading = relative_heading / 360
+            # closure_rate = 1
+            # for i in range(len(asteroid_radii)):
+            #     asteroid_radii[i] = asteroid_radii[i] / 32
+            
+
+            # # We dont want values at 0 or 1 as those are the bounds of the MFs
+            # if relative_heading < 0.0001:
+            #     relative_heading = 0.001
+            # if relative_heading > 0.9999:
+            #     relative_heading = 0.9999
+            # if closure_rate < 0.0001:
+            #     closure_rate = 0.001
+            # if closure_rate > 0.9999:
+            #     closure_rate = 0.9999
+
+
+
+            # # Just to allow for collapsing
+            # if True:
+
+            #     # Generates the paramers p1 and p2 for each rule association in the FIS
+            #     thrust_fis_1_params = []
+
+            #     for i in range(num_rules_az):
+            #         row = []
+            #         for j in range(num_rules_closure):
+            #             # Example: p0, p1, and p2 are chosen based on the rule indices.
+            #             p1 = i-1
+            #             p2 = max(j-1,0)
+            #             row.append([p1, p2])
+            #         thrust_fis_1_params.append(row)
+
+            #             # Thrust FIS
+            #     thrust_sum = 0
+                
+            #     sorted_len = len(relative_distance_sorted)
+
+            
+            #     # Calculates the thrust for each rule and sums them up
+            #     for i in range(min(asteroids_in_distance,sorted_len)):
+            #         distance = relative_distance_sorted[i]
+            #         distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
+            #         thrust_sum = distance_norm * ft.tsk_inference_mult(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
+            #         thrust_sum += thrust_sum
+            #     thrust = thrust_sum * 700
+
+
+            # # aim_fis_1_2_params = []
+            # # # Generate the parameters for the TSK system - Aim 1.2 
+            # # for i in range(num_rules_size):
+            # #     row = []
+            # #     for j in range(num_rules_distance):
+            # #         p1 = f(asteroid_radii[i]/len(asteroid_radii), 1)
+            # #         p2 = f(relative_distance_sorted[i]/math.sqrt(min(50/(relative_distance_sorted[i]+0.0001),0.99999)),1)
+            # #         row.append([p1, p2])
+                    
+            # #     aim_fis_1_2_params.append(row)
+            # # print(aim_fis_1_2_params)
+            
+            # # aim_fis_2_params = []
+            # # # Generate the parameters for the TSK system - Aim 2 
+            # # for i in range(num_rules_az):
+            # #     row = []
+            # #     for j in range(num_rules_closure):
+            # #         p1 = f(asteroid_radii[i]/len(asteroid_radii), 1)
+            # #         p2 = max(j-1,0)
+            # #         row.append([p1, p2])
+                    
+            # #     aim_fis_2_params.append(row)
+
+
+
+            # # Aim FIS 1.1 (in: Heading [deg.], Closure rate | out: threat level[-1,1])
+
+
+            # #WIP
+            # threat_sum = 0
+            # for i in range(sorted_len):
+            #     distance = relative_distance_sorted[i]
+            #     distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
+            #     # print(relative_heading)
+            #     threat_sum = distance_norm * ft.tsk_inference_mult(x1=relative_heading, x2=closure_rate, x1_mfs=az_mfs, x2_mfs=closure_mfs, params=thrust_fis_1_params)
+            #     threat_sum += threat_sum
+            
+            # threat = threat_sum
+            
+
+
+            # # Aim FIS 1.2 (in: Asteroid Size, Distance | out: hit chance)
+            
+            # # aim_sum = 0
+            # # for i in range(sorted_len):
+            # #     distance = relative_distance_sorted[i]
+            # #     distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
+            # #     # print(asteroid_radii[i])
+            # #     aim_sum =  distance_norm* ft.tsk_inference_mult(x1=asteroid_radii_sorted[i], x2=distance_norm, x1_mfs=size_mfs, x2_mfs=distance_mfs, params=aim_fis_1_2_params)
+            # #     aim_sum += aim_sum
+            # # aim = aim_sum
+            # # ft.plot_tsk_surface(x1_mfs=size_mfs, x2_mfs=distance_mfs, params=aim_fis_1_2_params, resolution=50)
+            # # print(aim)
+            
+
+            # # # Aim FIS 2
+            # # best_asteroid_index = -1  # Default value if no asteroid is found
+            # # best_aim_score = float('-inf')  # Initialize with a very low value
+            # # for i in range(sorted_len):
+            # #     # Compute fuzzy inference output (aim score)
+            # #     aim_score = ft.tsk_inference_mult(
+            # #         x1=aim, x2=threat, 
+            # #         x1_mfs=size_mfs, x2_mfs=distance_mfs, 
+            # #         params=aim_fis_2_params)
+
+            # #     # Check if this asteroid has the highest aim score
+            # #     if aim_score > best_aim_score:
+            # #         best_aim_score = aim_score
+            # #         best_asteroid_index = i  # Store the index of the best asteroid
+
+
+
+
+
+            # # The output is now the index of the chosen asteroid
+            # chosen_asteroid_index = closest_asteroid_index
+            
+            # turn_angle, on_target = vm.turn_angle(
+            #     ship_state["position"],
+            #     ship_state["heading"],
+            #     ship_state["turn_rate_range"],
+            #     self.bullet_speed,
+            #     asteroid_positions[chosen_asteroid_index], 
+            #     asteroid_velocities[chosen_asteroid_index],
+            #     game_state["delta_time"],
+            # )
 
 
         # Checks if it is on target to maintain accuracy
@@ -307,4 +377,5 @@ class FuzzyController(KesslerController):
         if on_target == True:
             shoot = True
 
-        return thrust, turn_angle, shoot, False
+        return thrust, 0, False, False
+        

@@ -106,6 +106,9 @@ def tsk_inference_add(x1, x2, x1_mfs, x2_mfs, params):
     numerator = 0.0
     denominator = 0.0
 
+
+    
+
     # Loop over all membership functions for x1 and x2 (the rule base)
     for i in range(len(x1_mfs)):
         for j in range(len(x2_mfs)):
@@ -202,7 +205,7 @@ def plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50):
 
 if __name__ == "__main__":
     # Define your "middle" centers (they don't need to be fixed in number)
-    az_centers = [0.25, 0.5, 0.75] 
+    az_centers = [0.5] 
     closure_centers = [0.25, 0.5, 0.75]
     
 
@@ -212,9 +215,9 @@ if __name__ == "__main__":
     x1_mfs = build_triangles(az_centers)
     x2_mfs = build_triangles(closure_centers)
 
-    # Visualize the membership functions
-    plot_mfs(x1_mfs, x_range=(0,1), title="x1 Membership Functions")
-    plot_mfs(x2_mfs, x_range=(0,1), title="x2 Membership Functions")
+    # # Visualize the membership functions
+    # plot_mfs(x1_mfs, x_range=(0,1), title="x1 Membership Functions")
+    # plot_mfs(x2_mfs, x_range=(0,1), title="x2 Membership Functions")
 
     # Set up realistic parameters for the TSK rule consequents.
     # For each rule, we assume a linear consequent: y = p0 + p1*x1 + p2*x2.
@@ -223,23 +226,15 @@ if __name__ == "__main__":
     num_rules_x1 = len(x1_mfs)
     num_rules_x2 = len(x2_mfs)
 
-    def f(x1, p1):
-        """
-        Computes f(x1) = -1 * (p1 * abs(x1 - 0.5) - 0.25)
-        in a piecewise manner, explicitly factoring out p1*x1.
-        """
-        if x1 < 0.5:
-            return p1 + (0.25 - 0.5 * p1)
-        else:
-            return -p1 + (0.25 + 0.5 * p1)
+
 
     params = []
     for i in range(num_rules_x1):
         row = []
         for j in range(num_rules_x2):
             # Example: p0, p1, and p2 are chosen based on the rule indices.
-            p1 = 1/(1+i)
-            p2 = 1/(1+j)
+            p1 = i-1
+            p2 = max(j-2,0)
             row.append([p1, p2])
         params.append(row)
 
