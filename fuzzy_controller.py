@@ -138,7 +138,7 @@ class FuzzyController(KesslerController):
 
         # Define your "middle" centers 
         az_centers = [0.5]
-        closure_centers = [0.5]
+        closure_centers = [0.3]
         az_closure_out_centers = [0.5]
 
         size_centers = [0.5]
@@ -185,7 +185,7 @@ class FuzzyController(KesslerController):
         for i in range(min(asteroids_in_distance, 10)):
             distance = relative_distance_sorted[i]
             distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
-            thrust_sum = distance_norm * (thrust_fis.infer({'azimuth': relative_heading, 'closure_rate': closure_rate}) - 0.4) * 10000
+            thrust_sum = distance_norm * (thrust_fis.infer({'azimuth': relative_heading, 'closure_rate': closure_rate}) - 0.4) * 1000
             thrust_sum += thrust_sum
         thrust = thrust_sum
 
