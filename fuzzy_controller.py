@@ -55,6 +55,13 @@ class FuzzyController(KesslerController):
         self, ship_state: "ShipOwnState", game_state: "GameState"
     ) -> "ActionsReturn":
         """The actions method for the fuzzy controller."""
+        
+        # Need to have access to chromosomes
+        # List[List[int]]
+        # First list: A list of floats (0.0 to 1.0) of a unknown length (Dynamic/Static?)
+        # Every other list is a list of memebership functions
+        # Each membership function is a list of 1-3 floats (0.0 to 1.0) that represent the center of the triangle
+        #chomosomes = global_dict.get("Parent_Core_Key")
 
         asteroid_positions = [
             asteroid["position"] for asteroid in game_state["asteroids"]
@@ -66,8 +73,6 @@ class FuzzyController(KesslerController):
             asteroid["radius"] for asteroid in game_state["asteroids"]
         ]
 
-
-
         # Convert from game relative to ship relative
         relative_positions = vm.game_to_ship_frame(ship_state["position"], asteroid_positions, game_state["map_size"])
         closest_asteroid_distance = 1000000
@@ -75,8 +80,12 @@ class FuzzyController(KesslerController):
 
 
         # Determine the closest asteroid and the number of asteroids in a certain distance
-        for i in range(len(relative_positions)):
-            distance_to_asteroid = vm.distance_to(relative_positions[i])
+        # TODO: Implement min() here as well as combine the game_to_ship_frame and the distance_to functions
+        # Should return distances as well as relative positions
+        # So that we can sort the asteroids by distance to the ship and disregard the ones that are too far away
+        # While still being able to calculate the threat level of the closest asteroids
+        for i, pos in enumerate(relative_positions):
+            distance_to_asteroid = vm.distance_to(pos)
             if distance_to_asteroid < 300:
                 asteroids_in_distance += 1
             if distance_to_asteroid < closest_asteroid_distance:
@@ -86,19 +95,22 @@ class FuzzyController(KesslerController):
 
     
         
-        closest_asteroid_position = relative_positions[closest_asteroid_index]
-        closest_asteroid_size = relative_positions[closest_asteroid_index]
-
-        relative_positions_sorted_index = vm.sort_by_distance(relative_positions)
+        closest_asteroid_position = relative_positions[closest_asteroid_index] # Grab the closest asteroid position
+        relative_positions_sorted_index = vm.sort_by_distance(relative_positions) # First is closest
         
         relative_distance_sorted = []
         asteroid_radii_sorted = []
 
         # Sort the asteroids by distance to the ship
+        # TODO: Totally, 100%, redundant. We should just sort the asteroids by distance to the ship
         for i in range(len(relative_positions_sorted_index)):
             relative_distance_sorted.append(vm.distance_to(relative_positions[relative_positions_sorted_index[i]]))
             asteroid_radii_sorted.append(asteroid_radii[relative_positions_sorted_index[i]])
+
+        # TODO: Just need to get the asteroids into a new dictionary sorted by their relative distance to the ship object.
+        # Make a new dictionary, that each key is the object of the sorted asteroids dict "GameState", and the key is the relative distance to the ship
         
+        # TODO: Improve how to pass the turn angle
         turn_angle, on_target = vm.turn_angle(
             ship_state["position"],
             ship_state["heading"],
@@ -137,9 +149,9 @@ class FuzzyController(KesslerController):
 
 
         # Define your "middle" centers 
-        az_centers = [0.5]
-        closure_centers = [0.3]
-        az_closure_out_centers = [0.5]
+        az_mf_centers = [0.5]
+        distance_mf_centers = [0.5]
+        az_distance_out_centers = [0.25, 0.5, 0.75]
 
         size_centers = [0.5]
         distance_centers = [0.5]
@@ -155,37 +167,30 @@ class FuzzyController(KesslerController):
 
         
         relative_heading = relative_heading / 360
-        closure_rate = closure_rate
-
-        print(relative_heading)
-        print(closure_rate)
-
-        closure_rate = max(0,min(0.9999,(closure_rate/200)))
 
         thrust_fis = MamdaniFIS(output_range=(0,1), n_points=1000)
 
-        thrust_fis.add_input_triangles("azimuth", az_centers, domain=(0, 1))
-        thrust_fis.add_input_triangles("closure_rate", closure_centers, domain=(0, 1))
-        thrust_fis.add_output_triangles(az_closure_out_centers, domain=(0,1))
+        thrust_fis.add_input_triangles("azimuth", az_mf_centers, domain=(0, 1))
+        thrust_fis.add_input_triangles("distance", distance_mf_centers, domain=(0, 1))
+        thrust_fis.add_output_triangles(az_distance_out_centers, domain=(0,1))
 
-        thrust_fis.add_rule({'azimuth': 'mf_0', 'closure_rate': 'mf_0'}, 'mf_1')
-        thrust_fis.add_rule({'azimuth': 'mf_1', 'closure_rate': 'mf_0'}, 'mf_1')
-        thrust_fis.add_rule({'azimuth': 'mf_2', 'closure_rate': 'mf_0'}, 'mf_1')
+        thrust_fis.add_rule({'azimuth': 'mf_0', 'distance': 'mf_0'}, 'mf_2')
+        thrust_fis.add_rule({'azimuth': 'mf_0', 'distance': 'mf_1'}, 'mf_1')
+        thrust_fis.add_rule({'azimuth': 'mf_0', 'distance': 'mf_2'}, 'mf_0')
 
-        thrust_fis.add_rule({'azimuth': 'mf_0', 'closure_rate': 'mf_1'}, 'mf_1')
-        thrust_fis.add_rule({'azimuth': 'mf_1', 'closure_rate': 'mf_1'}, 'mf_1')
-        thrust_fis.add_rule({'azimuth': 'mf_2', 'closure_rate': 'mf_1'}, 'mf_1')
+        thrust_fis.add_rule({'azimuth': 'mf_1', 'distance': 'mf_0'}, 'mf_2')
+        thrust_fis.add_rule({'azimuth': 'mf_1', 'distance': 'mf_1'}, 'mf_3')
+        thrust_fis.add_rule({'azimuth': 'mf_1', 'distance': 'mf_2'}, 'mf_4')
 
-        thrust_fis.add_rule({'azimuth': 'mf_0', 'closure_rate': 'mf_2'}, 'mf_0')
-        thrust_fis.add_rule({'azimuth': 'mf_1', 'closure_rate': 'mf_2'}, 'mf_2')
-        thrust_fis.add_rule({'azimuth': 'mf_2', 'closure_rate': 'mf_2'}, 'mf_0')
+        thrust_fis.add_rule({'azimuth': 'mf_2', 'distance': 'mf_0'}, 'mf_2')
+        thrust_fis.add_rule({'azimuth': 'mf_2', 'distance': 'mf_1'}, 'mf_1')
+        thrust_fis.add_rule({'azimuth': 'mf_2', 'distance': 'mf_2'}, 'mf_0')
 
-        result = thrust_fis.infer({'azimuth': relative_heading, 'closure_rate': closure_rate})
         thrust_sum = 0
         for i in range(min(asteroids_in_distance, 10)):
             distance = relative_distance_sorted[i]
             distance_norm = math.sqrt(min(50/(distance+0.0001),0.99999))
-            thrust_sum = distance_norm * (thrust_fis.infer({'azimuth': relative_heading, 'closure_rate': closure_rate}) - 0.4) * 1000
+            thrust_sum = distance_norm * (thrust_fis.infer({'azimuth': relative_heading, 'distance': distance_norm}) - 0.5) * 1_120
             thrust_sum += thrust_sum
         thrust = thrust_sum
 
@@ -377,5 +382,5 @@ class FuzzyController(KesslerController):
         if on_target == True:
             shoot = True
 
-        return thrust, 0, False, False
+        return thrust, turn_angle, shoot, False
         

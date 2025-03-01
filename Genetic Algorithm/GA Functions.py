@@ -194,6 +194,10 @@ def genetic_algorithm(POPULATION_SIZE = 15, MAX_GENERATIONS = 20, MUTATION_RATE 
     
     for generation in range(MAX_GENERATIONS):
         # 2. Evaluate fitness
+        
+        global_dict = {}
+        # TODO: Have 4 cores, start digesting the fitnesses in parallel
+        global_dict["my_Core"] = ind
         fitnesses = [fitness_function(ind) for ind in population]
         
         # Check if we found a better solution
@@ -292,8 +296,15 @@ def fitness_function(chromosome):
     fitness_sum = 0
     print("\n")
     print("New Fitness")
-    for _ in range(7):
+
+    # TODO: Have this train in parallel, should be able to do 3 cores at a time here...
+    for _ in range(6):
         print("New Game Run")
+
+        # TODO: Get this chromosome into the game.run function
+        # Let each core, have its own dictionary key, and the value be the chromosome
+        # Maybe use a sephamore or core-dependant var to keep track of which chromosome to use
+        # Then have the game.run function use that chromosome
         
 
         initial_time = time.perf_counter()

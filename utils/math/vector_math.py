@@ -1,5 +1,5 @@
 import math
-from typing import Tuple
+from typing import List, Tuple
 
 from utils import LoggerUtility
 
@@ -117,7 +117,7 @@ def turn_angle(
     left_turn_rate = left_turn_rate + 0.0001
     right_turn_rate = right_turn_rate - 0.0001
     # Determine the appropriate turn rate
-    if 0 < angle_delta < 180:
+    if 0 < angle_delta < 180: # Left Turn
         if angle_delta < left_turn_rate * delta_time:
             return left_turn_rate, False
         elif angle_delta < 3:
@@ -221,7 +221,7 @@ def calculate_if_collide(
 
 def game_to_ship_frame(
     position_vector: list[float, float],
-    asteroid_positions: Tuple[float, float],
+    asteroid_positions: List[Tuple[float, float]],
     game_size: list[float, float],
 ) -> float:
     map_x, map_y = game_size
@@ -229,8 +229,8 @@ def game_to_ship_frame(
     
     relative_positions = []
 
-    for asteroid in range(len(asteroid_positions)):
-        ast_x, ast_y = asteroid_positions[asteroid]
+    for asteroid in asteroid_positions:
+        ast_x, ast_y = asteroid
         dx = ast_x - old_x
         dy = ast_y - old_y
         if abs(dx) > map_x / 2:
@@ -238,7 +238,6 @@ def game_to_ship_frame(
         if abs(dy) > map_y / 2:
             dy -= map_y * dy / abs(dy)
         relative_positions.append((dx, dy))
-        
 
     return tuple(relative_positions)
     

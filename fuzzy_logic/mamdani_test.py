@@ -64,18 +64,18 @@ class MamdaniFIS:
             params_list.append(interior)
         else:
             # For the first interior MF:
-            next_mid = (centers[0] + centers[1]) / 2
+            next_mid = centers[1]
             interior_first = ("tri", (L_top, centers[0], next_mid))
             params_list.append(interior_first)
             # For additional interior MFs, if any.
             for i in range(1, n-1):
-                left_base = (centers[i-1] + centers[i]) / 2
-                right_base = (centers[i] + centers[i+1]) / 2
+                left_base = centers[i-1]
+                right_base = centers[i+1]
                 interior = ("tri", (left_base, centers[i], right_base))
                 params_list.append(interior)
             # For the last interior MF:
             R_top = R - shoulder_frac * (R - centers[-1])
-            interior_last = ("tri", (((centers[-2] + centers[-1]) / 2), centers[-1], R_top))
+            interior_last = ("tri", ((centers[-2]), centers[-1], R_top))
             params_list.append(interior_last)
         
         # Right extreme: trapezoidal MF.
@@ -156,12 +156,20 @@ class MamdaniFIS:
     def plot_response_surface(self, x_range, y_range, x_points=50, y_points=50):
         x_vals = np.linspace(x_range[0], x_range[1], x_points)
         y_vals = np.linspace(y_range[0], y_range[1], y_points)
+        max_val = -100000
+        min_val = 100000
         X, Y = np.meshgrid(x_vals, y_vals)
         Z = np.zeros_like(X)
         for i in range(x_points):
             for j in range(y_points):
                 inp = {'x': X[j, i], 'y': Y[j, i]}
                 Z[j, i] = self.infer(inp)
+                if Z[j,i] > max_val:
+                    max_val = Z[j,i]
+                if Z[j,i] < min_val:
+                    min_val = Z[j,i]
+        print("Max value:", max_val)
+        print("Min value:", min_val)
         fig = plt.figure(figsize=(10,7))
         ax = fig.add_subplot(111, projection='3d')
         surface = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.8)
@@ -204,27 +212,29 @@ if __name__ == "__main__":
     
     # For input variables, use one center (0.5) so that the MFs become:
     # Left shoulder, interior MF, and right shoulder.
-    fis.add_input_triangles("x", [0.5], domain=(0,1), shoulder_frac=0.5)
-    fis.add_input_triangles("y", [0.5], domain=(0,1), shoulder_frac=0.5)
+    fis.add_input_triangles("x", [0.5], domain=(0,1), shoulder_frac=0.1)
+    fis.add_input_triangles("y", [0.5], domain=(0,1), shoulder_frac=0.1)
     
     # For the output, choose a center (e.g., 0.25) to force low output.
-    fis.add_output_triangles([0.25], domain=(0,1), shoulder_frac=0.5)
+    fis.add_output_triangles([0.25,0.5,0.75], domain=(0,1), shoulder_frac=0.003)
     
     # Define a simple rule base.
-    fis.add_rule({'x': 'mf_0', 'y': 'mf_0'}, 'mf_0')
-    fis.add_rule({'x': 'mf_1', 'y': 'mf_0'}, 'mf_0')
+    fis.add_rule({'x': 'mf_0', 'y': 'mf_0'}, 'mf_2')
+    fis.add_rule({'x': 'mf_1', 'y': 'mf_0'}, 'mf_1')
     fis.add_rule({'x': 'mf_2', 'y': 'mf_0'}, 'mf_0')
-    fis.add_rule({'x': 'mf_0', 'y': 'mf_1'}, 'mf_1')
-    fis.add_rule({'x': 'mf_1', 'y': 'mf_1'}, 'mf_1')
-    fis.add_rule({'x': 'mf_2', 'y': 'mf_1'}, 'mf_1')
+
+    fis.add_rule({'x': 'mf_0', 'y': 'mf_1'}, 'mf_2')
+    fis.add_rule({'x': 'mf_1', 'y': 'mf_1'}, 'mf_3')
+    fis.add_rule({'x': 'mf_2', 'y': 'mf_1'}, 'mf_4')
+
     fis.add_rule({'x': 'mf_0', 'y': 'mf_2'}, 'mf_2')
-    fis.add_rule({'x': 'mf_1', 'y': 'mf_2'}, 'mf_2')
-    fis.add_rule({'x': 'mf_2', 'y': 'mf_2'}, 'mf_2')
+    fis.add_rule({'x': 'mf_1', 'y': 'mf_2'}, 'mf_1')
+    fis.add_rule({'x': 'mf_2', 'y': 'mf_2'}, 'mf_0')
     
     # For x nearly high (0.99) and y low (0.25), we expect a low output.
     result = fis.infer({'x': 0.99, 'y': 0.25})
     print("Inference result for x=0.99, y=0.25:", result)
     
     # Plot the membership functions and the response surface.
-    fis.plot_memberships(domain=(0,1), num_points=1000)
-    fis.plot_response_surface(x_range=(0,1), y_range=(0,1), x_points=50, y_points=50)
+    fis.plot_memberships(domain=(0.000001,0.999999), num_points=1000)
+    fis.plot_response_surface(x_range=(0.000001,0.999999), y_range=(0.000001,0.999999), x_points=20, y_points=20)

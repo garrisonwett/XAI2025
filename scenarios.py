@@ -24,7 +24,7 @@ scenarios: Dict[str, Scenario] = {
     ),
     "one_asteroid": Scenario(
         name="one_asteroid",
-        ship_states=[{"position": (600, 200), "angle": 0, "lives": 5, "team": 1,}],
+        ship_states=[{"position": (600, 200), "angle": 180, "lives": 5, "team": 1,}],
         asteroid_states=[
             {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4}
         ],
@@ -44,20 +44,9 @@ scenarios: Dict[str, Scenario] = {
         ammo_limit_multiplier=0.0,
         stop_if_no_ammo=False,
     ),
-    "avoid": Scenario(
-        name="one_asteroid",
-        ship_states=[{"position": (1000, 200), "angle": 0, "lives": 5, "team": 1,}],
-        asteroid_states=[
-            {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 2}
-        ],
-        map_size=(1200, 900),
-        time_limit=90,
-        ammo_limit_multiplier=0.0,
-        stop_if_no_ammo=False,
-    ),
     "aim_trainer": Scenario(
         name="one_asteroid",
-        ship_states=[{"position": (600, 500), "angle": 359, "lives": 5, "team": 1,}],
+        ship_states=[{"position": (600, 500), "angle": 360, "lives": 5, "team": 1,}],
         asteroid_states=[
             {"position": (200, 200), "angle": 0, "speed": 150, "size": 4},
             {"position": (500, 200), "angle": 0, "speed": 150, "size": 4},
@@ -78,6 +67,15 @@ scenarios: Dict[str, Scenario] = {
         
     ],
     ship_states=[{"position": (500, 500)}],
-    )
+    ),
+    "thrust_test": Scenario(
+    name="thrust_test",
+    ship_states=[{"position": (600, 200), "angle": 180, "lives": 5, "team": 1,}],
+    asteroid_states=[
+        {"position": (450, 200), "angle": 0.0, "speed": 100, "size": 4},
+        {"position": (750, 200), "angle": 0.0, "speed": 100, "size": 4},
+    ],
+    ),
+
     # Add more scenarios here
 }
