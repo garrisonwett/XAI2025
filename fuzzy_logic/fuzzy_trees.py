@@ -69,7 +69,7 @@ def main():
     x2_mfs = build_triangles(x2_centers)
 
     # Create a simple constant output table (9 rules)
-    rule_constants = np.array([0,0,0,-0.5,0.5,-0.5,-1,1,-1]).reshape(len(x1_mfs), len(x2_mfs))
+    rule_constants = np.array([0,-100,-500,0,100,500,0,-100,-500]).reshape(len(x1_mfs), len(x2_mfs))
     print("Rule Constants:")
     print(rule_constants)
     plot_mfs(x1_mfs, 'x1 Membership Functions')

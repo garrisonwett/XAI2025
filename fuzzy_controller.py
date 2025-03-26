@@ -70,6 +70,7 @@ class FuzzyController(KesslerController):
             asteroid["radius"] for asteroid in game_state["asteroids"]
         ]
 
+        EPS = 1e-9
 
         relative_positions = vm.game_to_ship_frame(ship_state["position"], asteroid_positions, game_state["map_size"])
 
@@ -78,8 +79,6 @@ class FuzzyController(KesslerController):
             relative_positions,
             key=lambda pos: math.hypot(*pos)
         )
-
-
         # Build Thrust FIS
 
         az_centers = [0.5]
@@ -92,13 +91,14 @@ class FuzzyController(KesslerController):
 
         # ft.plot_mfs(distance_mfs)
      
-        rule_constants = np.array([0,0,0,-0.5,0.5,-0.5,-1,1,-1]).reshape(len(az_mfs), len(distance_mfs))
-        thrust_sum = 0
+        rule_constants = np.array([0,-100,-500,0,100,500,0,-100,-500]).reshape(len(az_mfs), len(distance_mfs))
+        thrust = 0
+
         print("Start FIS Loop")
         for i in range(len(relative_positions_sorted)):
-                
+            
             asteroid_distance = math.hypot(*relative_positions_sorted[i])
-            if asteroid_distance>300:
+            if asteroid_distance>500:
                 break
 
 
@@ -108,12 +108,14 @@ class FuzzyController(KesslerController):
                 relative_positions_sorted[i],
             ) / 360
 
-            distance_norm = math.sqrt(min(50/(asteroid_distance+0.0001),0.99999))
+            if relative_heading == 0 or relative_heading == 1:
+                relative_heading = 0.99999
 
-            thrust_sum = distance_norm * ft.tsk_inference_const(relative_heading, distance_norm, az_mfs, distance_mfs, rule_constants)
-
-            thrust_sum += thrust_sum
-        thrust = thrust_sum * 700
+            distance_norm = min(50/(asteroid_distance+0.0001),0.99999)
+            thrust_sum = ft.tsk_inference_const(relative_heading, distance_norm, az_mfs, distance_mfs, rule_constants)-0.5
+            print(thrust_sum)
+            thrust += thrust_sum
+        thrust = thrust * 500
         print(thrust)
 
 
