@@ -1,12 +1,9 @@
 import random
-# ----------------------------
-# 1. Problem Definition
-# ----------------------------
 import argparse
 import os
 import sys
 import time
-
+import numpy as np
 from kesslergame import GraphicsType, KesslerGame, Scenario, TrainerEnvironment
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -43,7 +40,7 @@ game_settings = {
 # 2. GA Parameters
 # ----------------------------
 
-POPULATION_SIZE = 1
+POPULATION_SIZE = 3
 MAX_GENERATIONS = 20
 MUTATION_RATE   = 0.1
 CROSSOVER_RATE  = 0.9
@@ -52,56 +49,30 @@ CROSSOVER_RATE  = 0.9
 # 3. GA Components
 # ----------------------------
 
-def create_random_individual():
+def create_random_individual(size):
     """
     Inputs:
-    Something to tell it how many genes to make, how many sets, and what those sets should be
-
+        size - Integer - Number of genes in the individual
     Returns:
-    A random array of floats in [0,1] of length L OR an List of Lists with variables [0,1]
-
+        A 1D NumPy array of numbers (0, 0.1, 0.2, …, 0.9) of length size.
     Purpose:
-    Creates a new individial for the population in the GA
+        Creates a new individual for the population with discrete gene values.
     """
-    return_array = []
-    for i in range(2):
-        return_array = [*return_array, *random_ordered_sequence(3)]
-    return return_array
-
-def random_ordered_sequence(L):
-    """Return an array of L floats in [0,1] sorted in ascending order.
-    
-    This probably doesnt need to be its own function, unless we want to use it for mutation, TBD
-    
-    Inputs:
-    L - Integer - Length of the sequence to be created
-    
-    Returns - A list of floats in [0,1] sorted in ascending order
-    
-    Purpose - Creates a random sequence of floats in [0,1] sorted in ascending order. 
-              This is for Membership Functions in the Fuzzy Inference Systems
-    """
-    
-    
-    sequence = [random.random() for _ in range(L)]
-    return sorted(sequence)
+    # Generate random integers in [0,9] and scale by 0.1
+    return np.random.randint(0, 11, size) * 0.1
 
 
-def selection(population, fitnesses,K):
+def selection(population, fitnesses, K):
     """
     Inputs:
-    population - List of individuals in the population
-    fitnesses - List of fitnesses for each individual in the population
-    K - Integer - Number of individuals to select 
-
+        population - List of 1D NumPy arrays (individuals)
+        fitnesses - List of fitness values corresponding to each individual
+        K - Integer - Number of individuals to sample for selection
     Returns:
-    The best found individual in this group of K individuals
-
+        The best individual among K randomly selected individuals.
     Purpose:
-    Selects the best individual from a random group of K individuals in the population. This is used to select parents for crossover.
-
+        Selects a parent from the population using tournament selection.
     """
-    K = 10
     best_individual = None
     best_fitness = float('-inf')
     
@@ -112,106 +83,88 @@ def selection(population, fitnesses,K):
             best_individual = population[idx]
     return best_individual
 
+
 def crossover(parent1, parent2, CROSSOVER_RATE):
     """
     Inputs:
-    parent1 - List of floats - First parent for crossover
-    parent2 - List of floats - Second parent for crossover
-    CROSSOVER_RATE - Float - Probability of crossover occurring
-
+        parent1 - 1D NumPy array - First parent for crossover
+        parent2 - 1D NumPy array - Second parent for crossover
+        CROSSOVER_RATE - Float - Probability of crossover occurring
     Returns:
-    child1 - List of floats - First child from crossover
-    child2 - List of floats - Second child from crossover
-
+        child1, child2 - Two 1D NumPy arrays resulting from the crossover.
     Purpose:
-    Mixes two parents to create two children. This is used to create new individuals in the population.
-
-    TODO: Needs to be only doing crossovers where it is acceptable to do so - i.e. only where a set of MFs start/stop not in the middle of them.
-
-
+        Mixes two parents to create two children by splicing at a random
+        crossover point.
     """
     if random.random() < CROSSOVER_RATE:
-        # Valid crossover points: after 1st, 2nd, or 3rd coefficient
         cp = random.randint(1, len(parent1) - 1)
-        child1 = parent1[:cp] + parent2[cp:]
-        child2 = parent2[:cp] + parent1[cp:]
+        child1 = np.concatenate((parent1[:cp], parent2[cp:]))
+        child2 = np.concatenate((parent2[:cp], parent1[cp:]))
     else:
-        child1, child2 = parent1[:], parent2[:]
+        child1, child2 = parent1.copy(), parent2.copy()
     return child1, child2
+
 
 def mutate(parent, MUTATION_RATE):
     """
     Inputs:
-    parent - List of floats - Parent to mutate
-    MUTATION_RATE - Float - Probability of mutation occurring
-
+        parent - 1D NumPy array - Parent to mutate
+        MUTATION_RATE - Float - Probability of mutating each gene (value)
     Returns:
-    child - List of floats - Mutated child
-
+        child - 1D NumPy array - Mutated child
     Purpose:
-    Adds variation to a parent to create a child. This is used to create new individuals in the population.
-    
+        Adds variation to a parent by potentially mutating each individual gene.
+        The mutation now picks a value from {0, 0.1, ..., 0.9}.
     """
-    if random.random() < MUTATION_RATE:
-        child = create_random_individual()
-
-    else:
-        child = parent[:]
+    child = parent.copy()  # make a copy of the parent's values
+    for i in range(len(child)):
+        if random.random() < MUTATION_RATE:
+            child[i] = random.randint(0,10) * 0.1  # new gene is one of 0, 0.1, ..., 0.9
     return child
 
 # ----------------------------
 # 4. Main GA Loop
 # ----------------------------
 
-def genetic_algorithm(POPULATION_SIZE = 15, MAX_GENERATIONS = 20, MUTATION_RATE   = 0.1, CROSSOVER_RATE  = 0.9, K=10):
+def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, MUTATION_RATE=0.2, CROSSOVER_RATE=0.7, K=10):
     """
     Inputs:
-    POPULATION_SIZE - Integer - Number of individuals in the population
-    MAX_GENERATIONS - Integer - Number of generations to run the GA for
-    MUTATION_RATE   - Float - Probability of mutation occurring
-    CROSSOVER_RATE  - Float - Probability of crossover occurring
-    K - Integer - Number of individuals to select
-
-
+        POPULATION_SIZE - Integer: Number of individuals in the population
+        MAX_GENERATIONS - Integer: Number of generations to run the GA for
+        MUTATION_RATE   - Float: Probability of mutation per gene
+        CROSSOVER_RATE  - Float: Probability of crossover occurring
+        K - Integer: Tournament size for selection
     Returns:
-    best_solution - List of floats - Best solution found by the GA
-    best_fitness - Float - Fitness of the best solution found by the GA
-
+        best_solution - 1D NumPy array: Best solution found by the GA
+        best_fitness - Float: Fitness of the best solution
     Purpose:
-    Optimizes the Membership Functions of the Fuzzy Inference System for the Kessler Game using a Genetic Algorithm.
-    
+        Optimizes the Membership Functions for the Kessler Game using a Genetic Algorithm.
     """
-    
-    
-    
-    
+    chromosome_size = 33  # number of genes in the chromosome
     
     # 1. Initialize population
-    population = [create_random_individual() for _ in range(POPULATION_SIZE)]
-    # Track best solution
+    population = [create_random_individual(chromosome_size) for _ in range(POPULATION_SIZE)]
     best_solution_ever = None
     best_fitness_ever = float('-inf')
     
     for generation in range(MAX_GENERATIONS):
-        # 2. Evaluate fitness
+        # 2. Evaluate fitness for each individual
         fitnesses = [fitness_function(ind) for ind in population]
         
-        # Check if we found a better solution
+        # Track the best in the current generation
         current_best_fit = max(fitnesses)
         current_best_ind = population[fitnesses.index(current_best_fit)]
         
         if current_best_fit > best_fitness_ever:
             best_fitness_ever = current_best_fit
-            best_solution_ever = current_best_ind[:]
+            best_solution_ever = current_best_ind.copy()
         
-        # Print progress
-        if generation % 1 == 0:
-            print(f"Generation {generation}, Best Fitness: {best_fitness_ever:.6f}")
+        print(f"Generation {generation}, Best Fitness so far: {best_fitness_ever:.6f}")
 
         # 3. Generate new population
         new_population = []
         while len(new_population) < POPULATION_SIZE:
-            # 4. Selection
+            # 4. Selection (tournament selection)
             parent1 = selection(population, fitnesses, K)
             parent2 = selection(population, fitnesses, K)
             
@@ -224,40 +177,35 @@ def genetic_algorithm(POPULATION_SIZE = 15, MAX_GENERATIONS = 20, MUTATION_RATE 
             
             new_population.append(child1)
             new_population.append(child2)
-
-        # Replace old population
-        population = new_population
+        
+        # In case we've exceeded the population size, trim the extra individuals
+        population = new_population[:POPULATION_SIZE]
     
     # Evaluate final population
     final_fitnesses = [fitness_function(ind) for ind in population]
     best_index = final_fitnesses.index(max(final_fitnesses))
     final_best_ind = population[best_index]
     
-    # Possibly return whichever was truly best across all generations
+    # Return the overall best solution found
     if fitness_function(final_best_ind) > best_fitness_ever:
-        best_solution_ever = final_best_ind
+        best_solution_ever = final_best_ind.copy()
         best_fitness_ever = fitness_function(final_best_ind)
     
     return best_solution_ever, best_fitness_ever
 
 # ----------------------------
-# 5. Running the GA
+# 5. Fitness Function and Running the GA
 # ----------------------------
-
-
 
 def fitness_function(chromosome):
     """
     Inputs:
-    chromosome - List of floats - Chromosome to evaluate
-
+        chromosome - 1D NumPy array - Chromosome to evaluate
     Returns:
-    fitness - Float - Fitness of the chromosome
-
-
+        fitness - Float - Fitness of the chromosome
     Purpose:
-    Plays the game with the given chromosome and returns the fitness of the chromosome based on the performance in the game.
-    
+        Plays the Kessler Game with the given chromosome and returns the fitness
+        based on game performance.
     """
     parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
 
@@ -274,7 +222,7 @@ def fitness_function(chromosome):
         choices=["KesslerGame", "TrainerEnvironment"],
         type=str,
         default="TrainerEnvironment",
-        help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for max-speed, no-graphics simulation.",
+        help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for fast, no-graphics simulation.",
     )
 
     args = parser.parse_args()
@@ -287,15 +235,9 @@ def fitness_function(chromosome):
         case "TrainerEnvironment":
             game = TrainerEnvironment(settings=game_settings)
 
-    #logger.info(f"Running scenario: {selected_scenario.name}")
-
     fitness_sum = 0
-    print("\n")
-    print("New Fitness")
-    for _ in range(7):
-        print("New Game Run")
-        
-
+    print("\nEvaluating new fitness:")
+    for _ in range(3):
         initial_time = time.perf_counter()
         score, perf_data = game.run(
             chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
@@ -305,15 +247,24 @@ def fitness_function(chromosome):
             accuracy = team.accuracy
             deaths = team.deaths
             asteroids_hit = team.asteroids_hit
-        fitness_sum = fitness_sum + (asteroids_hit * accuracy - 3 * deaths**5)
+        fitness_sum += (asteroids_hit * accuracy - 3 * deaths**5)
 
     return fitness_sum
-    
 
+# Run the Genetic Algorithm to find the best solution
+
+start_time = time.perf_counter()
 best_solution, best_fitness = genetic_algorithm()
-print(f"Best Solution: {best_solution}, Best Fitness: {best_fitness:.6f}")
+print(f"Best Solution: {best_solution}")
+print(f"Best Fitness: {best_fitness:.6f}")
+
+print("Training time end: ", str(time.perf_counter() - start_time))
 
 input("Press Enter to continue...")
+
+# ----------------------------
+# Run a final game with the best solution found
+# ----------------------------
 
 parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
 
@@ -330,11 +281,10 @@ parser.add_argument(
     choices=["KesslerGame", "TrainerEnvironment"],
     type=str,
     default="KesslerGame",
-    help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for max-speed, no-graphics simulation.",
+    help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for fast, no-graphics simulation.",
 )
 
 args = parser.parse_args()
-
 selected_scenario: Scenario = scenarios[args.scenario]
 
 match args.game_type:
@@ -344,28 +294,7 @@ match args.game_type:
         game = TrainerEnvironment(settings=game_settings)
 
 logger.info(f"Running scenario: {selected_scenario.name}")
-chromosome = None
 initial_time = time.perf_counter()
 score, perf_data = game.run(
     best_solution, scenario=selected_scenario, controllers=[FuzzyController()]
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

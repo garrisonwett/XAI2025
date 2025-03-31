@@ -42,7 +42,7 @@ if __name__ == "__main__":
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="avoid",
+        default="random_repeatable",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
 
@@ -66,8 +66,10 @@ if __name__ == "__main__":
 
     logger.info(f"Running scenario: {selected_scenario.name}")
     initial_time = time.perf_counter()
+
+    chromosome = None
     score, perf_data = game.run(
-        scenario=selected_scenario, controllers=[FuzzyController()]
+        chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
     )
 
     print("Total scenario eval time: ", str(time.perf_counter() - initial_time))

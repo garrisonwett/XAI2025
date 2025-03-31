@@ -5,7 +5,7 @@ from kesslergame.scenario import Scenario
 scenarios: Dict[str, Scenario] = {
     "random_repeatable": Scenario(
         name="random_repeatable",
-        num_asteroids=20,
+        num_asteroids=7,
         asteroid_states=None,
         ship_states=[{"position": (400, 400), "angle": 90, "lives": 3, "team": 1}],
         map_size=(1000, 800),

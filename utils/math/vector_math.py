@@ -120,14 +120,14 @@ def turn_angle(
     if 0 < angle_delta < 180:
         if angle_delta < left_turn_rate * delta_time:
             return left_turn_rate, False
-        elif angle_delta < 3:
+        elif angle_delta < 1:
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False
     else:
         if angle_delta > right_turn_rate * delta_time:
             return right_turn_rate, False
-        elif angle_delta > -3:
+        elif angle_delta > -1:
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False

@@ -52,13 +52,66 @@ class FuzzyController(KesslerController):
         return self.msg
 
     def actions(
-        self, ship_state: "ShipOwnState", game_state: "GameState"
+        self, chromosome, ship_state: "ShipOwnState", game_state: "GameState"
     ) -> "ActionsReturn":
         thrust = 0
         turn_angle = 0
         shoot = False
         
         """The actions method for the fuzzy controller."""
+
+        # Parameters from GA
+
+        # chromosome = [0.2,0.5,
+        #               0,-100,-500,0,100,500,0,-100,-500,
+        #               0.5,0.5,0.5,0.5,
+        #               0.1,0.4,1,0,0.2,0.6,0,0.1,0.2,
+        #               0,0.1,0.5,0.2,0.3,0.7,0.3,0.7,1]
+
+        # Thrust Parameters
+        az_centers = [chromosome[0]]
+        thrust_distance_centers = [chromosome[1]]
+
+        az_mfs = ft.build_triangles(az_centers)
+        thrust_distance_mfs = ft.build_triangles(thrust_distance_centers)
+        rule_constants_thrust = np.array(chromosome[2:11]).reshape(len(az_mfs), len(thrust_distance_mfs)) # [az, distance]
+
+
+        # Turn Parameters
+ 
+        angle_centers = [chromosome[12]]
+        closure_centers = [chromosome[13]]
+
+        turn_1_centers = [chromosome[14]]
+        turn_distance_centers = [chromosome[15]]
+        
+        angle_mfs = ft.build_triangles(angle_centers)
+        closure_mfs = ft.build_triangles(closure_centers)
+
+        turn_1_mfs = ft.build_triangles(turn_1_centers)
+        turn_distance_mfs = ft.build_triangles(turn_distance_centers)
+
+        rule_constants_turn_1 = np.array(chromosome[15:24]).reshape(len(angle_mfs), len(closure_mfs)) # [angle, closure]
+        rule_constants_turn_2 = np.array(chromosome[24:34]).reshape(len(turn_1_mfs), len(turn_distance_mfs)) # [turn_1, distance]
+
+        thrust = 0
+
+
+        # Build membership functions for x1 and x2 based on the provided centers.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         asteroid_positions = [
             asteroid["position"] for asteroid in game_state["asteroids"]
@@ -74,31 +127,25 @@ class FuzzyController(KesslerController):
 
         relative_positions = vm.game_to_ship_frame(ship_state["position"], asteroid_positions, game_state["map_size"])
 
-        pos_vel_pairs = sorted(zip(relative_positions, asteroid_velocities), key=lambda pv: math.hypot(*pv[0]))
-        relative_positions_sorted, asteroid_velocities_sorted = map(list, zip(*pos_vel_pairs))
+        pos_vel_pairs = sorted(zip(relative_positions, asteroid_velocities,asteroid_positions), key=lambda pv: math.hypot(*pv[0]))
+        relative_positions_sorted, asteroid_velocities_sorted,asteroid_positions_sorted = map(list, zip(*pos_vel_pairs))
 
         # Build Thrust FIS
-
-        az_centers = [0.5]
-        distance_centers = [0.5]
-
-
         # Build membership functions for x1 and x2 based on the provided centers.
-        az_mfs = ft.build_triangles(az_centers)
-        distance_mfs = ft.build_triangles(distance_centers)
+
 
         # ft.plot_mfs(distance_mfs)
-     
-        rule_constants_thrust = np.array([0,-100,-500,0,100,500,0,-100,-500]).reshape(len(az_mfs), len(distance_mfs)) # [az, distance]
+        
+        # rule_constants_thrust = np.array([0,-100,-500,0,100,500,0,-100,-500]).reshape(len(az_mfs), len(thrust_distance_mfs)) # [az, distance]
         thrust = 0
 
-        print("\nStart Thrust FIS Loop")
+
         for i in range(len(relative_positions_sorted)):
             
 
             # Check asteroid is not so far that we do not care about it
             asteroid_distance = math.hypot(*relative_positions_sorted[i])
-            if asteroid_distance>500:
+            if asteroid_distance>200:
                 break
 
             # Calculate relative heading
@@ -115,43 +162,21 @@ class FuzzyController(KesslerController):
 
             # Calculate thrust per asteroid
             distance_norm = min(50/(asteroid_distance+0.0001),0.99999)
-            thrust_sum = ft.tsk_inference_const(relative_heading, distance_norm, az_mfs, distance_mfs, rule_constants_thrust)
+            thrust_sum = ft.tsk_inference_const(relative_heading, distance_norm, az_mfs, thrust_distance_mfs, rule_constants_thrust)-0.5
             thrust += thrust_sum
 
         thrust = thrust * 200
 
         # Build Turn FIS
-
-        angle_centers = [0.5]
-        distance_centers = [0.5]
-
-        turn_1_centers = [0.5]
-        closure_centers = [0.5]
-
-
         # Build membership functions for x1 and x2 based on the provided centers.
 
-        angle_mfs = ft.build_triangles(angle_centers)
-        distance_mfs = ft.build_triangles(distance_centers)
-
-        turn_1_mfs = ft.build_triangles(turn_1_centers)
-        closure_mfs = ft.build_triangles(closure_centers)
-
-        # Build Rules List
-
-        rule_constants_turn_1 = np.array([0.1,0.4,1,0,0.2,0.6,0,0.1,0.2]).reshape(len(angle_mfs), len(distance_mfs)) 
-        # [angle, distance] Angle closer to 0 is closer to off the nose, Distance closer to 1 is closer to ship
-
-
-        rule_constants_turn_2 = np.array([0,0.1,0.4,0.0,0.3,0.7,0.1,0.4,1]).reshape(len(turn_1_mfs), len(closure_mfs)) # [turn_1, closure]
-        # [turn_1, closure] Turn 1 closer to 1 is more threat, Closure closer to 1 is more threat
 
 
         turn_angle = 0
         turn_asteroid_threat = -1
         turn_asteroid_index = 0
         
-        for i in range(len(relative_positions_sorted)):
+        for i in range(min(len(relative_positions_sorted), 15)):
 
             # Calculate relative heading
             relative_heading = vm.heading_relative_angle(
@@ -161,13 +186,11 @@ class FuzzyController(KesslerController):
             ) / 360
 
             asteroid_distance = math.hypot(*relative_positions_sorted[i])
+
             distance_norm = min(50/(asteroid_distance+0.0001),0.99999)
             
             off_nose_norm = 1 - abs(1 - 2*relative_heading)
-
-
-            turn_fis_val_1 = ft.tsk_inference_const(off_nose_norm, distance_norm, angle_mfs, distance_mfs, rule_constants_turn_1)
-
+            
             closure_rate = vm.calculate_closure_rate(
                 ship_state["position"],
                 ship_state["heading"],
@@ -176,25 +199,32 @@ class FuzzyController(KesslerController):
                 asteroid_velocities_sorted[i],
             )
 
-            turn_fis_val_final = ft.tsk_inference_const(turn_fis_val_1, closure_rate, turn_1_mfs, closure_mfs, rule_constants_turn_2)
+
+            turn_fis_val_1 = ft.tsk_inference_const(off_nose_norm, closure_rate, angle_mfs, closure_mfs, rule_constants_turn_1)
+
+            turn_fis_val_final = ft.tsk_inference_const(turn_fis_val_1, distance_norm, turn_1_mfs, turn_distance_mfs, rule_constants_turn_2)
 
             if turn_fis_val_final > turn_asteroid_threat:
-                turn_asteroid_threat = turn_fis_val_final
                 turn_asteroid_index = i
 
-        turn_angle = vm.
+
+        # Calculate turn angle
+
+        turn_angle, on_target = vm.turn_angle(
+            ship_state["position"],
+            ship_state["heading"],
+            ship_state["turn_rate_range"],
+            self.bullet_speed,
+            asteroid_positions_sorted[turn_asteroid_index], 
+            asteroid_velocities_sorted[turn_asteroid_index],
+            game_state["delta_time"],
+        )
 
             
-            
+        # Calclulate if on target
 
-
-
-
-
-
-
-
-
+        if on_target:
+            shoot = True
 
 
         return thrust, turn_angle, shoot, False
