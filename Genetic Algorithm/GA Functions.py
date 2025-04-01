@@ -40,10 +40,10 @@ game_settings = {
 # 2. GA Parameters
 # ----------------------------
 
-POPULATION_SIZE = 3
-MAX_GENERATIONS = 20
-MUTATION_RATE   = 0.1
-CROSSOVER_RATE  = 0.9
+POPULATION_SIZE = 20
+MAX_GENERATIONS = 100
+MUTATION_RATE   = 0.2
+CROSSOVER_RATE  = 0.8
 
 # ----------------------------
 # 3. GA Components
@@ -254,7 +254,7 @@ def fitness_function(chromosome):
 # Run the Genetic Algorithm to find the best solution
 
 start_time = time.perf_counter()
-best_solution, best_fitness = genetic_algorithm()
+best_solution, best_fitness = genetic_algorithm(POPULATION_SIZE, MAX_GENERATIONS, MUTATION_RATE, CROSSOVER_RATE, K=10)
 print(f"Best Solution: {best_solution}")
 print(f"Best Fitness: {best_fitness:.6f}")
 
