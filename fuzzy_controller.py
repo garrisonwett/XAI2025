@@ -212,8 +212,6 @@ class FuzzyController(KesslerController):
                 asteroid_velocities_sorted[i],
             )
 
-            # Measure the time for the two fuzzy inference calls.
-
             fuzzy_val_1 = tsk_inference_const(
                 off_nose_norm, closure_rate, angle_mfs, closure_mfs, rule_constants_turn_1
             )

@@ -6,6 +6,8 @@ import time
 from datetime import datetime
 import numpy as np
 from kesslergame import GraphicsType, KesslerGame, Scenario, TrainerEnvironment
+import multiprocessing
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -41,13 +43,13 @@ game_settings = {
 # 2. GA Parameters
 # ----------------------------
 
-POPULATION_SIZE = 3
+POPULATION_SIZE = 50
 MAX_GENERATIONS = 4
 MUTATION_RATE   = 0.4
 MUTATION_DECAY = 0.90
 CROSSOVER_RATE  = 0.8
 CROSSOVER_INCREASE = 0.95 
-K = 3
+K = 4
 # ----------------------------
 # 3. GA Components
 # ----------------------------
@@ -112,7 +114,7 @@ def mutate(parent, MUTATION_RATE):
     """
     Inputs:
         parent - 1D NumPy array - Parent to mutate
-        MUTATION_RATE - Float - Probability of mutating each gene (value)
+        MUTATION_RATE - Float - Probability of mutating a chromosome (value)
     Returns:
         child - 1D NumPy array - Mutated child
     Purpose:
@@ -159,8 +161,9 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
         mutation_rate = MUTATION_RATE - 0.9*(MUTATION_RATE * (generation / MAX_GENERATIONS))  # Decay mutation rate over generations
         crossover_rate = CROSSOVER_RATE + (CROSSOVER_INCREASE - CROSSOVER_RATE) * (generation / MAX_GENERATIONS)  # Increase crossover rate over generations
         
-        fitnesses = [fitness_function(ind) for ind in population]
-        
+
+        with multiprocessing.Pool() as pool:
+            fitnesses = pool.map(fitness_function, population)
         # Track the best in the current generation
         current_best_fit = max(fitnesses)
         current_best_ind = population[fitnesses.index(current_best_fit)]
@@ -228,7 +231,7 @@ def fitness_function(chromosome):
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="random_repeatable",
+        default="training",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
 
@@ -268,86 +271,6 @@ def fitness_function(chromosome):
 
     return fitness_sum
 
-# Run the Genetic Algorithm to find the best solution
-
-start_time = time.perf_counter()
-best_solution, best_fitness = genetic_algorithm(POPULATION_SIZE, MAX_GENERATIONS, MUTATION_RATE, CROSSOVER_RATE, K)
-
-print(f"Best Solution: {best_solution}")
-print(f"Best Fitness: {best_fitness:.6f}")
-
-print("Training time end: ", str(time.perf_counter() - start_time))
-
-
-
-filename = "genetic_algorithm_results.txt"
-file_exists = os.path.exists(filename)
-
-with open(filename, 'a') as file:
-    # If file already exists, add a few blank lines first.
-    if file_exists:
-        file.write("\n\n\n")
-
-    # Get current time and date
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Write the header with time/date and the parameters/results
-    file.write(f"Genetic Algorithm Results at {current_time}\n")
-    file.write("Genetic Algorithm Parameters:\n")
-    file.write(f"Population Size - {POPULATION_SIZE}\n")
-    file.write(f"Generations - {MAX_GENERATIONS}\n")
-    file.write(f"Crossover Rate - {CROSSOVER_RATE}\n")
-    file.write(f"Mutation Rate - {MUTATION_RATE}\n")
-    file.write(f"K - {K}\n")
-    file.write("\n")
-    file.write("Best Solution\n")
-    file.write(f"{best_solution}\n\n")
-    file.write("Best Fitness\n")
-    file.write(f"{best_fitness}\n")
-
-
-
-
-
-
-input("Press Enter to continue...")
-
-# ----------------------------
-# Run a final game with the best solution found
-# ----------------------------
-
-parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
-
-parser.add_argument(
-    "--scenario",
-    choices=scenarios.keys(),
-    type=str,
-    default="random_repeatable",
-    help="Select a scenario by name: " + ", ".join(scenarios.keys()),
-)
-
-parser.add_argument(
-    "--game_type",
-    choices=["KesslerGame", "TrainerEnvironment"],
-    type=str,
-    default="KesslerGame",
-    help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for fast, no-graphics simulation.",
-)
-
-args = parser.parse_args()
-selected_scenario: Scenario = scenarios[args.scenario]
-
-match args.game_type:
-    case "KesslerGame":
-        game = KesslerGame(settings=game_settings)
-    case "TrainerEnvironment":
-        game = TrainerEnvironment(settings=game_settings)
-
-logger.info(f"Running scenario: {selected_scenario.name}")
-initial_time = time.perf_counter()
-score, perf_data = game.run(
-    best_solution, scenario=selected_scenario, controllers=[FuzzyController()]
-)
 
 
 
@@ -357,3 +280,87 @@ score, perf_data = game.run(
 
 
 
+
+
+if __name__ == '__main__':
+
+    # Run the Genetic Algorithm to find the best solution
+
+    start_time = time.perf_counter()
+    best_solution, best_fitness = genetic_algorithm(POPULATION_SIZE, MAX_GENERATIONS, MUTATION_RATE, CROSSOVER_RATE, K)
+
+    print(f"Best Solution: {best_solution}")
+    print(f"Best Fitness: {best_fitness:.6f}")
+
+    print("Training time end: ", str(time.perf_counter() - start_time))
+
+
+
+    filename = "genetic_algorithm_results.txt"
+    file_exists = os.path.exists(filename)
+
+    with open(filename, 'a') as file:
+        # If file already exists, add a few blank lines first.
+        if file_exists:
+            file.write("\n\n\n")
+
+        # Get current time and date
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Write the header with time/date and the parameters/results
+        file.write(f"Genetic Algorithm Results at {current_time}\n")
+        file.write("Genetic Algorithm Parameters:\n")
+        file.write(f"Population Size - {POPULATION_SIZE}\n")
+        file.write(f"Generations - {MAX_GENERATIONS}\n")
+        file.write(f"Crossover Rate - {CROSSOVER_RATE}\n")
+        file.write(f"Mutation Rate - {MUTATION_RATE}\n")
+        file.write(f"K - {K}\n")
+        file.write("\n")
+        file.write("Best Solution\n")
+        file.write(f"{best_solution}\n\n")
+        file.write("Best Fitness\n")
+        file.write(f"{best_fitness}\n")
+
+
+
+
+
+
+    input("Press Enter to continue...")
+
+    # ----------------------------
+    # Run a final game with the best solution found
+    # ----------------------------
+
+    parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
+
+    parser.add_argument(
+        "--scenario",
+        choices=scenarios.keys(),
+        type=str,
+        default="training",
+        help="Select a scenario by name: " + ", ".join(scenarios.keys()),
+    )
+
+    parser.add_argument(
+        "--game_type",
+        choices=["KesslerGame", "TrainerEnvironment"],
+        type=str,
+        default="KesslerGame",
+        help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for fast, no-graphics simulation.",
+    )
+
+    args = parser.parse_args()
+    selected_scenario: Scenario = scenarios[args.scenario]
+
+    match args.game_type:
+        case "KesslerGame":
+            game = KesslerGame(settings=game_settings)
+        case "TrainerEnvironment":
+            game = TrainerEnvironment(settings=game_settings)
+
+    logger.info(f"Running scenario: {selected_scenario.name}")
+    initial_time = time.perf_counter()
+    score, perf_data = game.run(
+        best_solution, scenario=selected_scenario, controllers=[FuzzyController()]
+    )
