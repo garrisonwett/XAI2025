@@ -89,6 +89,8 @@ class FuzzyController(KesslerController):
                 0, 0.1, 0.5, 0.2, 0.3, 0.7, 0.3, 0.7, 1
             ]
 
+
+        # Best Chromosome from GA: [0.5 0.5 0.6 0.1 0.  0.3 1.  0.6 0.8 0.  0.4 0.4 0.9 0.4 0.8 0.2 0.9 0.4 0.6 0.4 0.  0.6 0.3 0.7 0.8 0.8 0.4 0.1 0.6 0.3 0.5 0.2 0.4]
         # Thrust Parameters
         time_start = _time()
 
@@ -211,7 +213,7 @@ class FuzzyController(KesslerController):
             )
 
             # Measure the time for the two fuzzy inference calls.
-            
+
             fuzzy_val_1 = tsk_inference_const(
                 off_nose_norm, closure_rate, angle_mfs, closure_mfs, rule_constants_turn_1
             )

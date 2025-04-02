@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 import time
+from datetime import datetime
 import numpy as np
 from kesslergame import GraphicsType, KesslerGame, Scenario, TrainerEnvironment
 
@@ -40,8 +41,8 @@ game_settings = {
 # 2. GA Parameters
 # ----------------------------
 
-POPULATION_SIZE = 40
-MAX_GENERATIONS = 400
+POPULATION_SIZE = 3
+MAX_GENERATIONS = 4
 MUTATION_RATE   = 0.4
 MUTATION_DECAY = 0.90
 CROSSOVER_RATE  = 0.8
@@ -277,6 +278,38 @@ print(f"Best Fitness: {best_fitness:.6f}")
 
 print("Training time end: ", str(time.perf_counter() - start_time))
 
+
+
+filename = "genetic_algorithm_results.txt"
+file_exists = os.path.exists(filename)
+
+with open(filename, 'a') as file:
+    # If file already exists, add a few blank lines first.
+    if file_exists:
+        file.write("\n\n\n")
+
+    # Get current time and date
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Write the header with time/date and the parameters/results
+    file.write(f"Genetic Algorithm Results at {current_time}\n")
+    file.write("Genetic Algorithm Parameters:\n")
+    file.write(f"Population Size - {POPULATION_SIZE}\n")
+    file.write(f"Generations - {MAX_GENERATIONS}\n")
+    file.write(f"Crossover Rate - {CROSSOVER_RATE}\n")
+    file.write(f"Mutation Rate - {MUTATION_RATE}\n")
+    file.write(f"K - {K}\n")
+    file.write("\n")
+    file.write("Best Solution\n")
+    file.write(f"{best_solution}\n\n")
+    file.write("Best Fitness\n")
+    file.write(f"{best_fitness}\n")
+
+
+
+
+
+
 input("Press Enter to continue...")
 
 # ----------------------------
@@ -315,3 +348,12 @@ initial_time = time.perf_counter()
 score, perf_data = game.run(
     best_solution, scenario=selected_scenario, controllers=[FuzzyController()]
 )
+
+
+
+
+
+
+
+
+
