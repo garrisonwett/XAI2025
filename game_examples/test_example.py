@@ -42,7 +42,7 @@ if __name__ == "__main__":
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="random_repeatable",
+        default="training",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
 
@@ -50,7 +50,7 @@ if __name__ == "__main__":
         "--game_type",
         choices=["KesslerGame", "TrainerEnvironment"],
         type=str,
-        default="KesslerGame",
+        default="TrainerEnvironment",
         help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for max-speed, no-graphics simulation.",
     )
 
@@ -79,3 +79,6 @@ if __name__ == "__main__":
     print("Accuracy: ", str([team.accuracy for team in score.teams]))
     print("Mean eval time: ", str([team.mean_eval_time for team in score.teams]))
 
+    print(score.stop_reason)
+
+    

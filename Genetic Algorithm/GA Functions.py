@@ -40,11 +40,13 @@ game_settings = {
 # 2. GA Parameters
 # ----------------------------
 
-POPULATION_SIZE = 20
-MAX_GENERATIONS = 100
-MUTATION_RATE   = 0.2
+POPULATION_SIZE = 40
+MAX_GENERATIONS = 400
+MUTATION_RATE   = 0.4
+MUTATION_DECAY = 0.90
 CROSSOVER_RATE  = 0.8
-
+CROSSOVER_INCREASE = 0.95 
+K = 3
 # ----------------------------
 # 3. GA Components
 # ----------------------------
@@ -117,16 +119,17 @@ def mutate(parent, MUTATION_RATE):
         The mutation now picks a value from {0, 0.1, ..., 0.9}.
     """
     child = parent.copy()  # make a copy of the parent's values
-    for i in range(len(child)):
-        if random.random() < MUTATION_RATE:
-            child[i] = random.randint(0,10) * 0.1  # new gene is one of 0, 0.1, ..., 0.9
+    if random.random() < MUTATION_RATE:
+        for i in range(len(child)):
+            if random.random() < 0.4:
+                child[i] = random.randint(0,10) * 0.1  # new gene is one of 0, 0.1, ..., 0.9
     return child
 
 # ----------------------------
 # 4. Main GA Loop
 # ----------------------------
 
-def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, MUTATION_RATE=0.2, CROSSOVER_RATE=0.7, K=10):
+def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, crossover_rate=0.7, K=10):
     """
     Inputs:
         POPULATION_SIZE - Integer: Number of individuals in the population
@@ -149,6 +152,12 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, MUTATION_RATE=0.2, C
     
     for generation in range(MAX_GENERATIONS):
         # 2. Evaluate fitness for each individual
+
+        gen_start_time = time.perf_counter()  # For performance tracking of each generation
+
+        mutation_rate = MUTATION_RATE - 0.9*(MUTATION_RATE * (generation / MAX_GENERATIONS))  # Decay mutation rate over generations
+        crossover_rate = CROSSOVER_RATE + (CROSSOVER_INCREASE - CROSSOVER_RATE) * (generation / MAX_GENERATIONS)  # Increase crossover rate over generations
+        
         fitnesses = [fitness_function(ind) for ind in population]
         
         # Track the best in the current generation
@@ -160,26 +169,31 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, MUTATION_RATE=0.2, C
             best_solution_ever = current_best_ind.copy()
         
         print(f"Generation {generation}, Best Fitness so far: {best_fitness_ever:.6f}")
-
+        print(f"Current Best Individual: {current_best_ind}")  # For debugging purposes
         # 3. Generate new population
         new_population = []
+
+        new_population.append(current_best_ind.copy())  # Elitism: carry forward the best individual to the next generation
+
         while len(new_population) < POPULATION_SIZE:
             # 4. Selection (tournament selection)
             parent1 = selection(population, fitnesses, K)
             parent2 = selection(population, fitnesses, K)
             
             # 5. Crossover
-            child1, child2 = crossover(parent1, parent2, CROSSOVER_RATE)
+            child1, child2 = crossover(parent1, parent2, crossover_rate)
             
             # 6. Mutation
-            child1 = mutate(child1, MUTATION_RATE)
-            child2 = mutate(child2, MUTATION_RATE)
+            child1 = mutate(child1, mutation_rate)
+            child2 = mutate(child2, mutation_rate)
             
             new_population.append(child1)
             new_population.append(child2)
         
         # In case we've exceeded the population size, trim the extra individuals
         population = new_population[:POPULATION_SIZE]
+
+        print(f"Generation {generation} completed in {time.perf_counter() - gen_start_time:.2f} seconds.")
     
     # Evaluate final population
     final_fitnesses = [fitness_function(ind) for ind in population]
@@ -236,8 +250,8 @@ def fitness_function(chromosome):
             game = TrainerEnvironment(settings=game_settings)
 
     fitness_sum = 0
-    print("\nEvaluating new fitness:")
-    for _ in range(3):
+    
+    for _ in range(1):
         initial_time = time.perf_counter()
         score, perf_data = game.run(
             chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
@@ -247,14 +261,17 @@ def fitness_function(chromosome):
             accuracy = team.accuracy
             deaths = team.deaths
             asteroids_hit = team.asteroids_hit
-        fitness_sum += (asteroids_hit * accuracy - 3 * deaths**5)
+
+
+        fitness_sum += (asteroids_hit * accuracy**2 - 40 * deaths**3)
 
     return fitness_sum
 
 # Run the Genetic Algorithm to find the best solution
 
 start_time = time.perf_counter()
-best_solution, best_fitness = genetic_algorithm(POPULATION_SIZE, MAX_GENERATIONS, MUTATION_RATE, CROSSOVER_RATE, K=10)
+best_solution, best_fitness = genetic_algorithm(POPULATION_SIZE, MAX_GENERATIONS, MUTATION_RATE, CROSSOVER_RATE, K)
+
 print(f"Best Solution: {best_solution}")
 print(f"Best Fitness: {best_fitness:.6f}")
 

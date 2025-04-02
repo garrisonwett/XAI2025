@@ -1,39 +1,53 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import numba
+
 
 EPS = np.finfo(float).eps
 
 def triangular_mf(x, a, b, c):
-    x_arr = np.array(x, dtype=float)
-    mu = np.zeros_like(x_arr)
-    left_mask  = (x_arr > a) & (x_arr < b)
-    right_mask = (x_arr >= b) & (x_arr < c)
-    mu[left_mask]  = (x_arr[left_mask] - a) / (b - a)
-    mu[right_mask] = (c - x_arr[right_mask]) / (c - b)
-    return mu.item() if np.isscalar(x) else mu
+    # For scalar x, avoid array overhead.
+    if np.isscalar(x):
+        if x <= a or x >= c:
+            return 0.0
+        elif x < b:
+            return (x - a) / (b - a)
+        else:
+            return (c - x) / (c - b)
+    else:
+        # Ensure x is a NumPy array (without needless copying if possible).
+        x_arr = np.asarray(x, dtype=float)
+        # Compute the two linear segments and use np.minimum/np.maximum to get the triangular shape.
+        y = np.maximum(0, np.minimum((x_arr - a) / (b - a), (c - x_arr) / (c - b)))
+        return y
 
 def build_triangles(centers):
+    centers = np.asarray(centers)
     sorted_centers = np.sort(centers)
+    # Include endpoints 0 and 1.
     full = np.concatenate(([0.0], sorted_centers, [1.0]))
-    mfs = []
     n = len(full)
-    for i in range(n):
-        left   = full[i-1] if i>0     else full[0]
-        center = full[i]
-        right  = full[i+1] if i<n-1   else full[-1]
-        mfs.append(lambda x, l=left, c=center, r=right: triangular_mf(x, l, c, r))
+    # Precompute left, center, and right for each triangle.
+    left = np.empty(n)
+    center = full.copy()
+    right = np.empty(n)
+    left[0] = full[0]
+    left[1:] = full[:-1]
+    right[:-1] = full[1:]
+    right[-1] = full[-1]
+    # Return a list of lambda functions; capture the parameters in default arguments to avoid repeated lookups.
+    mfs = [lambda x, l=left[i], c=center[i], r=right[i]: triangular_mf(x, l, c, r)
+           for i in range(n)]
     return mfs
 
 def tsk_inference_const(x1, x2, x1_mfs, x2_mfs, rule_constants):
-    num = 0.0
-    den = 0.0
-    for i, mf1 in enumerate(x1_mfs):
-        for j, mf2 in enumerate(x2_mfs):
-            w = mf1(x1) * mf2(x2)
-            y_ij = rule_constants[i, j]
-            num += w * y_ij
-            den += w
+    # Compute membership values for each input.
+    w1 = np.array([mf(x1) for mf in x1_mfs])
+    w2 = np.array([mf(x2) for mf in x2_mfs])
+    # Use dot products to compute numerator and denominator without forming an outer product.
+    num = w1.dot(rule_constants).dot(w2)
+    den = w1.sum() * w2.sum()
     return num / (den + EPS)
 
 def plot_mfs(mfs, title_str):

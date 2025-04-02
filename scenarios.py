@@ -79,6 +79,19 @@ scenarios: Dict[str, Scenario] = {
         
     ],
     ship_states=[{"position": (500, 500)}],
+    ),
+
+    "training": Scenario(
+    name="training",
+    ship_states=[{"position": (400, 400), "angle": 0, "lives": 5, "team": 1}],
+    asteroid_states=[
+        {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4},
+        {"position": (800, 200), "angle": 90.0, "speed": 150, "size": 4},
+        {"position": (200, 800), "angle": 180.0, "speed": 150, "size": 4},
+        {"position": (800, 800), "angle": 270.0, "speed": 150, "size": 4},
+        {"position": (30, 410), "angle": 0.0, "speed": 50, "size": 4},
+    ],
     )
+
     # Add more scenarios here
 }

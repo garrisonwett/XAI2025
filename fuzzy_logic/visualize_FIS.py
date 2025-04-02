@@ -17,6 +17,7 @@ def triangular_mf(x, a, b, c):
 # Build triangular membership functions given centers.
 def build_triangles(centers):
     sorted_centers = np.sort(centers)
+    # Include 0 and 1 as endpoints.
     full = np.concatenate(([0.0], sorted_centers, [1.0]))
     mfs = []
     n = len(full)
@@ -28,68 +29,72 @@ def build_triangles(centers):
         mfs.append(lambda x, l=left, c=center, r=right: triangular_mf(x, l, c, r))
     return mfs
 
-# 4D TSK inference (constant output) using four inputs and four sets of MFs.
-def tsk_inference_const_4d(x1, x2, x3, x4, mfs1, mfs2, mfs3, mfs4, rule_constants):
+# 2D TSK inference (constant output) using two inputs and two sets of MFs.
+def tsk_inference_const_2d(x1, x2, mfs1, mfs2, rule_constants):
     num = 0.0
     den = 0.0
     for i, mf1 in enumerate(mfs1):
         for j, mf2 in enumerate(mfs2):
-            for k, mf3 in enumerate(mfs3):
-                for l, mf4 in enumerate(mfs4):
-                    w = mf1(x1) * mf2(x2) * mf3(x3) * mf4(x4)
-                    y = rule_constants[i, j, k, l]
-                    num += w * y
-                    den += w
+            w = mf1(x1) * mf2(x2)
+            y = rule_constants[i, j]
+            num += w * y
+            den += w
     return num / (den + EPS)
 
-# For a fixed value of input 1, create a 3D scatter plot of outputs over inputs 2, 3, and 4.
-def plot_tsk_output_3d_for_fixed_input1(fixed_x1, mfs1, mfs2, mfs3, mfs4, rule_constants, resolution=10):
-    # Generate grids for inputs 2, 3, and 4.
+# Compute a FIS surface over a grid of two inputs.
+def compute_fis_surface(mfs1, mfs2, rule_constants, resolution=50):
+    x1_vals = np.linspace(EPS, 1 - EPS, resolution)
     x2_vals = np.linspace(EPS, 1 - EPS, resolution)
-    x3_vals = np.linspace(EPS, 1 - EPS, resolution)
-    x4_vals = np.linspace(EPS, 1 - EPS, resolution)
+    X1, X2 = np.meshgrid(x1_vals, x2_vals)
+    Y = np.zeros_like(X1)
     
-    X2, X3, X4 = np.meshgrid(x2_vals, x3_vals, x4_vals, indexing='ij')
-    # Flatten the grid arrays for iteration.
-    X2_flat = X2.flatten()
-    X3_flat = X3.flatten()
-    X4_flat = X4.flatten()
-    outputs = np.zeros_like(X2_flat)
+    # Evaluate the FIS output at every grid point.
+    for i in range(resolution):
+        for j in range(resolution):
+            Y[i, j] = tsk_inference_const_2d(X1[i, j], X2[i, j], mfs1, mfs2, rule_constants)
     
-    # Compute the fuzzy output for every combination of inputs 2, 3, and 4.
-    for idx, (x2, x3, x4) in enumerate(zip(X2_flat, X3_flat, X4_flat)):
-        outputs[idx] = tsk_inference_const_4d(fixed_x1, x2, x3, x4, mfs1, mfs2, mfs3, mfs4, rule_constants)
-    
-    # Create a 3D scatter plot with color representing the output.
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    scatter = ax.scatter(X2_flat, X3_flat, X4_flat, c=outputs, cmap='viridis')
-    ax.set_xlabel('Input 2')
-    ax.set_ylabel('Input 3')
-    ax.set_zlabel('Input 4')
-    ax.set_title(f'TSK Output (fixed Input 1 = {fixed_x1:.2f})')
-    fig.colorbar(scatter, ax=ax, label='TSK Output')
-    plt.tight_layout()
+    return X1, X2, Y
 
-# Main visualization routine: for several fixed x1 values, plot the outputs.
-def visualize_4d_tsk_outputs():
-    # For demonstration, use the same center for all inputs.
+# Main visualization routine for two 2D FIS surfaces.
+def visualize_2d_fis_surfaces():
+    # For demonstration, use one center for each input.
+    # With centers = [0.5] the membership functions are defined at 0, 0.5, and 1.
     centers = [0.5]
-    mfs1 = build_triangles(centers)
-    mfs2 = build_triangles(centers)
-    mfs3 = build_triangles(centers)
-    mfs4 = build_triangles(centers)
+    mfs1 = build_triangles([0.5])
+    mfs2 = build_triangles([0.3])
     
-    # Create a sample 4D rule constant array with shape (3,3,3,3).
-    rule_constants = np.arange(81).reshape(3, 3, 3, 3)
+    # Define two different 2D rule constant arrays (shape 3x3 because we have three MFs per input).
+    rule_constants1 = np.array([1.,  0.2, 0.1, 0.8, 0.8, 0.2, 0.6, 0.2, 0.4]).reshape(3, 3)
     
-    # Choose several fixed values for input 1.
-    fixed_x1_values = [0.25, 0.5, 0.75]
+    rule_constants2 = np.array([0,0.1,0.7,0.2,0.3,0.8,0.3,0.6,1]).reshape(3, 3)
     
-    for fixed_x1 in fixed_x1_values:
-        plot_tsk_output_3d_for_fixed_input1(fixed_x1, mfs1, mfs2, mfs3, mfs4, rule_constants, resolution=5)
+    # Compute the surfaces.
+    X1, X2, Y1 = compute_fis_surface(mfs1, mfs2, rule_constants1)
+    _,  _, Y2 = compute_fis_surface(mfs1, mfs2, rule_constants2)
     
+    # Create a single figure with two subplots.
+    fig = plt.figure(figsize=(12, 6))
+    
+    # Surface 1.
+    ax1 = fig.add_subplot(121, projection='3d')
+    surf1 = ax1.plot_surface(X1, X2, Y1, cmap='viridis')
+    ax1.set_xlabel('Input 1')
+    ax1.set_ylabel('Input 2')
+    ax1.set_zlabel('FIS Output')
+    ax1.set_title('FIS Surface 1')
+    fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=5)
+    
+    # Surface 2.
+    ax2 = fig.add_subplot(122, projection='3d')
+    surf2 = ax2.plot_surface(X1, X2, Y2, cmap='viridis')
+    ax2.set_xlabel('Input 1')
+    ax2.set_ylabel('Input 2')
+    ax2.set_zlabel('FIS Output')
+    ax2.set_title('FIS Surface 2')
+    fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=5)
+    
+    plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
-    visualize_4d_tsk_outputs()
+    visualize_2d_fis_surfaces()
