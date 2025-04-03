@@ -86,7 +86,8 @@ class FuzzyController(KesslerController):
                 0.5, 0.4, 0, 0.5, 0.6, 1, 0.5, 0.4, 0,
                 0.5, 0.5, 0.5, 0.5,
                 0.1, 0.4, 1, 0, 0.2, 0.6, 0, 0.1, 0.2,
-                0, 0.1, 0.5, 0.2, 0.3, 0.7, 0.3, 0.7, 1
+                0, 0.1, 0.5, 0.2, 0.3, 0.7, 0.3, 0.7, 1,
+                1
             ]
 
 
@@ -119,7 +120,7 @@ class FuzzyController(KesslerController):
         rule_constants_turn_1 = np.array(chromosome[15:24]).reshape(
             len(angle_mfs), len(closure_mfs)
         )  # [angle, closure]
-        rule_constants_turn_2 = np.array(chromosome[24:34]).reshape(
+        rule_constants_turn_2 = np.array(chromosome[24:33]).reshape(
             len(turn_1_mfs), len(turn_distance_mfs)
         )  # [turn_1, distance]
 
@@ -177,7 +178,7 @@ class FuzzyController(KesslerController):
 
             thrust += thrust_sum
 
-        thrust = thrust * 2000
+        thrust = thrust * 2000 * chromosome[33]
 
         # === Build Turn FIS ===
 

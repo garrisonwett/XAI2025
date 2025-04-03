@@ -44,7 +44,7 @@ game_settings = {
 # ----------------------------
 
 POPULATION_SIZE = 50
-MAX_GENERATIONS = 4
+MAX_GENERATIONS = 1000
 MUTATION_RATE   = 0.4
 MUTATION_DECAY = 0.90
 CROSSOVER_RATE  = 0.8
@@ -146,7 +146,7 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
     Purpose:
         Optimizes the Membership Functions for the Kessler Game using a Genetic Algorithm.
     """
-    chromosome_size = 33  # number of genes in the chromosome
+    chromosome_size = 34  # number of genes in the chromosome
     
     # 1. Initialize population
     population = [create_random_individual(chromosome_size) for _ in range(POPULATION_SIZE)]
@@ -267,7 +267,7 @@ def fitness_function(chromosome):
             asteroids_hit = team.asteroids_hit
 
 
-        fitness_sum += (asteroids_hit * accuracy**2 - 40 * deaths**3)
+        fitness_sum += (asteroids_hit**2 * accuracy**2)
 
     return fitness_sum
 

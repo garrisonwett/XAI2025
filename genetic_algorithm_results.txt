@@ -45,3 +45,20 @@ Best Solution
 
 Best Fitness
 -4939.34922124226
+
+
+
+Genetic Algorithm Results at 2025-04-03 01:48:28
+Genetic Algorithm Parameters:
+Population Size - 50
+Generations - 1000
+Crossover Rate - 0.8
+Mutation Rate - 0.4
+K - 4
+
+Best Solution
+[0.6 0.3 0.  0.6 0.1 0.5 0.6 0.8 0.3 0.  0.6 0.1 1.  0.5 0.3 0.8 0.6 0.4
+ 0.8 0.3 0.2 1.  0.7 0.6 0.9 1.  0.  0.5 0.9 1.  0.4 0.7 0.5]
+
+Best Fitness
+-4924.093195266272
