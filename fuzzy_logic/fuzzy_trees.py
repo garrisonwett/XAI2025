@@ -42,15 +42,33 @@ def build_triangles(centers):
     return mfs
 
 def tsk_inference_const(x1, x2, x1_mfs, x2_mfs, rule_constants):
-    # t_start = time.perf_counter()
-    # Compute membership values for each input.
-    w1 = np.array([mf(x1) for mf in x1_mfs])
-    w2 = np.array([mf(x2) for mf in x2_mfs])
-    # Use dot products to compute numerator and denominator without forming an outer product.
-    num = w1.dot(rule_constants).dot(w2)
-    den = w1.sum() * w2.sum()
+    """
+    Performs TSK inference for constant outputs without using NumPy.
 
-    # print(f"TSK Inference Time: {time.perf_counter() - t_start:.6f} seconds")
+    Parameters:
+        x1: First input value.
+        x2: Second input value.
+        x1_mfs: List of membership functions for x1.
+        x2_mfs: List of membership functions for x2.
+        rule_constants: 2D list (matrix) of rule constants.
+
+    Returns:
+        The inferred output as a float.
+    """
+    # Compute membership values for each input.
+    w1 = [mf(x1) for mf in x1_mfs]
+    w2 = [mf(x2) for mf in x2_mfs]
+
+    # Compute the numerator as the double sum: 
+    # num = sum_i(sum_j (w1[i] * rule_constants[i][j] * w2[j]))
+    num = 0.0
+    for i in range(len(w1)):
+        for j in range(len(w2)):
+            num += w1[i] * rule_constants[i][j] * w2[j]
+
+    # Compute the denominator as the product of the sums of membership values.
+    den = sum(w1) * sum(w2)
+
     return num / (den + EPS)
 
 def plot_mfs(mfs, title_str):
