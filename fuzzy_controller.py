@@ -87,6 +87,12 @@ class FuzzyController(KesslerController):
                 0.5, 0.5, 0.5, 0.5,
                 0.1, 0.4, 1, 0, 0.2, 0.6, 0, 0.1, 0.2,
                 0, 0.1, 0.5, 0.2, 0.3, 0.7, 0.3, 0.7, 1,
+                1,
+                0.2, 0.5,
+                0.5, 0.4, 0, 0.5, 0.6, 1, 0.5, 0.4, 0,
+                0.5, 0.5, 0.5, 0.5,
+                0.1, 0.4, 1, 0, 0.2, 0.6, 0.2, 0.1, 0.2,
+                0.2, 0.1, 0.5, 0.2, 0.3, 0.7, 0.3, 0.7, 1,
                 1
             ]
 
@@ -103,6 +109,9 @@ class FuzzyController(KesslerController):
         rule_constants_thrust = np.array(chromosome[2:11]).reshape(
             len(az_mfs), len(thrust_distance_mfs)
         )  # [az, distance]
+
+
+
 
         # Turn Parameters
         angle_centers = [chromosome[12]]
@@ -123,6 +132,36 @@ class FuzzyController(KesslerController):
         rule_constants_turn_2 = np.array(chromosome[24:33]).reshape(
             len(turn_1_mfs), len(turn_distance_mfs)
         )  # [turn_1, distance]
+
+
+        # Threat Parameters
+
+        threat_distance_centers = [chromosome[33]]
+        threat_closure_centers = [chromosome[34]]
+
+        threat_distance_mfs = ft.build_triangles(threat_distance_centers)  # [threat_distance]
+        threat_closure_mfs = ft.build_triangles(threat_closure_centers)  # [threat_closure]
+
+        rule_constants_threat = np.array(chromosome[35:44]).reshape(
+            len(threat_distance_mfs), len(threat_closure_mfs)
+        )  # [threat_distance, threat_closure]
+
+        threat_scalar = chromosome[45]
+
+
+        # Threat Avoidance Parameters
+
+        threat_avoidance_distance_centers = [chromosome[46]]  # Distance for threat avoidance
+        threat_avoidance_az_centers = [chromosome[47]]  # Azimuth for threat avoidance
+
+        threat_avoidance_distance_mfs = ft.build_triangles(threat_avoidance_distance_centers)  # [threat_avoidance_distance]
+        threat_avoidance_az_mfs = ft.build_triangles(threat_avoidance_az_centers)  # [threat_avoidance_az]
+
+        rule_constants_threat_avoidance = np.array(chromosome[48:57]).reshape(
+            len(threat_avoidance_distance_mfs), len(threat_avoidance_az_mfs)
+        )
+
+        turn_scalar = chromosome[58]
 
         thrust = EPS
 
@@ -150,96 +189,179 @@ class FuzzyController(KesslerController):
             list, zip(*asteroid_data)
         )
 
-        # === Build Thrust FIS ===
 
+        threat_sum = 0
         for i, pos in enumerate(relative_positions_sorted):
+
             asteroid_distance = distances_sorted[i]  # Use precomputed distance
             # Skip asteroids that are too far.
-            if asteroid_distance > 200:
+            if asteroid_distance > 300:
                 break
 
             # Calculate relative heading and normalize.
-            relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
+            closure_rate = _calculate_closure_rate(
+                ship_state["position"],  # Ship position
+                ship_state["heading"],  # Ship heading
+                ship_state["speed"],  # Ship speed
+                pos,  # Asteroid position
+                asteroid_velocities_sorted[i],  # Asteroid velocity
+            )
             # Avoid division by zero edge cases.
-            if relative_heading == 0 or relative_heading == 1:
+            if closure_rate == 0 or closure_rate == 1:
                 relative_heading = 0.99999
 
             # Normalize distance.
             distance_norm = min(50 / (asteroid_distance + 0.0001), 0.99999)
 
             # Compute thrust contribution from this asteroid.
-            thrust_sum = _tsk_inference_const(
-                relative_heading,
+            threat = _tsk_inference_const(
+                closure_rate,
                 distance_norm,
-                az_mfs,
-                thrust_distance_mfs,
-                rule_constants_thrust,
-            ) - 0.5
-
-            thrust += thrust_sum
-
-        thrust = thrust * 2000 * chromosome[33]
-
-        # === Build Turn FIS ===
-
-        turn_asteroid_threat = -1
-        turn_asteroid_index = 0
-
-        total_fuzzy_time = EPS
-
-        heading = ship_state["heading"]
-        position = ship_state["position"]
-        speed = ship_state["speed"]
-        max_iterations = min(len(relative_positions_sorted), 15)
-
-        # Localize function references.
-        heading_relative_angle = _heading_relative_angle
-        calculate_closure_rate = _calculate_closure_rate
-        tsk_inference_const = _tsk_inference_const
-
-        for i in range(max_iterations):
-            pos = relative_positions_sorted[i]
-            rel_heading = heading_relative_angle([0, 0], heading, pos) / 360
-
-            asteroid_distance = distances_sorted[i]  # Use precomputed distance
-            distance_norm = min(50 / (asteroid_distance + 0.0001), 0.99999)
-            off_nose_norm = 1 - abs(1 - 2 * rel_heading)
-
-            closure_rate = calculate_closure_rate(
-                position,
-                heading,
-                speed,
-                pos,
-                asteroid_velocities_sorted[i],
+                threat_closure_mfs,
+                threat_distance_mfs,
+                rule_constants_threat,
             )
 
-            fuzzy_val_1 = tsk_inference_const(
-                off_nose_norm, closure_rate, angle_mfs, closure_mfs, rule_constants_turn_1
+            threat_sum += threat
+
+        threat_sum = threat_sum * threat_scalar
+
+
+
+
+
+
+
+        # === Build Thrust FIS ===
+
+
+
+
+
+        if threat_scalar < 10:
+
+
+
+            for i, pos in enumerate(relative_positions_sorted):
+                asteroid_distance = distances_sorted[i]  # Use precomputed distance
+                # Skip asteroids that are too far.
+                if asteroid_distance > 200:
+                    break
+
+                # Calculate relative heading and normalize.
+                relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
+                # Avoid division by zero edge cases.
+                if relative_heading == 0 or relative_heading == 1:
+                    relative_heading = 0.99999
+
+                # Normalize distance.
+                distance_norm = min(50 / (asteroid_distance + 0.0001), 0.99999)
+
+                # Compute thrust contribution from this asteroid.
+                thrust_sum = _tsk_inference_const(
+                    relative_heading,
+                    distance_norm,
+                    az_mfs,
+                    thrust_distance_mfs,
+                    rule_constants_thrust,
+                ) - 0.5
+
+                thrust += thrust_sum
+
+            thrust = thrust * 2000 * chromosome[33]
+
+            # === Build Turn FIS ===
+
+            turn_asteroid_threat = -1
+            turn_asteroid_index = 0
+
+            total_fuzzy_time = EPS
+
+            heading = ship_state["heading"]
+            position = ship_state["position"]
+            speed = ship_state["speed"]
+            max_iterations = min(len(relative_positions_sorted), 15)
+
+            # Localize function references.
+            heading_relative_angle = _heading_relative_angle
+            calculate_closure_rate = _calculate_closure_rate
+            tsk_inference_const = _tsk_inference_const
+
+            for i in range(max_iterations):
+                pos = relative_positions_sorted[i]
+                rel_heading = heading_relative_angle([0, 0], heading, pos) / 360
+
+                asteroid_distance = distances_sorted[i]  # Use precomputed distance
+                distance_norm = min(50 / (asteroid_distance + 0.0001), 0.99999)
+                off_nose_norm = 1 - abs(1 - 2 * rel_heading)
+
+                closure_rate = calculate_closure_rate(
+                    position,
+                    heading,
+                    speed,
+                    pos,
+                    asteroid_velocities_sorted[i],
+                )
+
+                fuzzy_val_1 = tsk_inference_const(
+                    off_nose_norm, closure_rate, angle_mfs, closure_mfs, rule_constants_turn_1
+                )
+                fuzzy_val_final = tsk_inference_const(
+                    fuzzy_val_1, distance_norm, turn_1_mfs, turn_distance_mfs, rule_constants_turn_2
+                )
+
+
+                if fuzzy_val_final > turn_asteroid_threat:
+                    turn_asteroid_index = i
+
+
+
+            # Calculate turn angle using the most threatening asteroid.
+            turn_angle, on_target = vm.turn_angle(
+                ship_state["position"],
+                ship_state["heading"],
+                ship_state["turn_rate_range"],
+                self.bullet_speed,
+                asteroid_positions_sorted[turn_asteroid_index],
+                asteroid_velocities_sorted[turn_asteroid_index],
+                game_state["delta_time"],
             )
-            fuzzy_val_final = tsk_inference_const(
-                fuzzy_val_1, distance_norm, turn_1_mfs, turn_distance_mfs, rule_constants_turn_2
-            )
 
+            # Determine if we should shoot.
+            if on_target:
+                shoot = True
 
-            if fuzzy_val_final > turn_asteroid_threat:
-                turn_asteroid_index = i
+        else:
 
+            
+            for i, pos in enumerate(relative_positions_sorted):
+                asteroid_distance = distances_sorted[i]  # Use precomputed distance
+                # Skip asteroids that are too far.
+                if asteroid_distance > 200:
+                    break
 
+                # Calculate relative heading and normalize.
+                relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
+                # Avoid division by zero edge cases.
+                if relative_heading == 0 or relative_heading == 1:
+                    relative_heading = 0.99999
 
-        # Calculate turn angle using the most threatening asteroid.
-        turn_angle, on_target = vm.turn_angle(
-            ship_state["position"],
-            ship_state["heading"],
-            ship_state["turn_rate_range"],
-            self.bullet_speed,
-            asteroid_positions_sorted[turn_asteroid_index],
-            asteroid_velocities_sorted[turn_asteroid_index],
-            game_state["delta_time"],
-        )
+                # Normalize distance.
+                distance_norm = min(50 / (asteroid_distance + 0.0001), 0.99999)
 
-        # Determine if we should shoot.
-        if on_target:
-            shoot = True
+                # Compute thrust contribution from this asteroid.
+                threat_avoidance = _tsk_inference_const(
+                    relative_heading,
+                    distance_norm,
+                    az_mfs,
+                    thrust_distance_mfs,
+                    rule_constants_thrust,
+                )
+
+                threat_avoidance_sum = threat_avoidance
+
+            turn_angle = threat_avoidance_sum * turn_scalar * 500
+
 
             
         return thrust, turn_angle, shoot, False

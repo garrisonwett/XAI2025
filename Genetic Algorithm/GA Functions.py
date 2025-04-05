@@ -43,7 +43,7 @@ game_settings = {
 # 2. GA Parameters
 # ----------------------------
 
-POPULATION_SIZE = 50
+POPULATION_SIZE = 400
 MAX_GENERATIONS = 1000
 MUTATION_RATE   = 0.4
 MUTATION_DECAY = 0.90
@@ -146,7 +146,7 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
     Purpose:
         Optimizes the Membership Functions for the Kessler Game using a Genetic Algorithm.
     """
-    chromosome_size = 34  # number of genes in the chromosome
+    chromosome_size = 59  # number of genes in the chromosome
     
     # 1. Initialize population
     population = [create_random_individual(chromosome_size) for _ in range(POPULATION_SIZE)]
