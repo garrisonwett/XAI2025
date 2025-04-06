@@ -43,11 +43,11 @@ game_settings = {
 # 2. GA Parameters
 # ----------------------------
 
-POPULATION_SIZE = 400
+POPULATION_SIZE = 500
 MAX_GENERATIONS = 1000
-MUTATION_RATE   = 0.4
+MUTATION_RATE   = 0.35
 MUTATION_DECAY = 0.90
-CROSSOVER_RATE  = 0.8
+CROSSOVER_RATE  = 0.7
 CROSSOVER_INCREASE = 0.95 
 K = 4
 # ----------------------------
@@ -153,6 +153,10 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
     best_solution_ever = None
     best_fitness_ever = float('-inf')
     
+    current_best_fit = None
+    last_fitness = None
+    fitness_age = 0
+    
     for generation in range(MAX_GENERATIONS):
         # 2. Evaluate fitness for each individual
 
@@ -160,7 +164,7 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
 
         mutation_rate = MUTATION_RATE - 0.9*(MUTATION_RATE * (generation / MAX_GENERATIONS))  # Decay mutation rate over generations
         crossover_rate = CROSSOVER_RATE + (CROSSOVER_INCREASE - CROSSOVER_RATE) * (generation / MAX_GENERATIONS)  # Increase crossover rate over generations
-        
+
 
         with multiprocessing.Pool() as pool:
             fitnesses = pool.map(fitness_function, population)
@@ -179,6 +183,18 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
 
         new_population.append(current_best_ind.copy())  # Elitism: carry forward the best individual to the next generation
 
+        if current_best_fit == last_fitness:
+            fitness_age = fitness_age + 1
+        else:
+            fitness_age = 0
+            
+        if fitness_age >= 20:
+            mutation_rate = MUTATION_RATE + (1 - MUTATION_RATE) * (fitness_age / 100)
+
+        if mutation_rate > 0.9:
+            mutation_rate = 0.9
+
+        print(mutation_rate)
         while len(new_population) < POPULATION_SIZE:
             # 4. Selection (tournament selection)
             parent1 = selection(population, fitnesses, K)
@@ -196,6 +212,8 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
         
         # In case we've exceeded the population size, trim the extra individuals
         population = new_population[:POPULATION_SIZE]
+
+        last_fitness = current_best_fit  # Save the last best fitness for comparison in the next generation
 
         print(f"Generation {generation} completed in {time.perf_counter() - gen_start_time:.2f} seconds.")
     

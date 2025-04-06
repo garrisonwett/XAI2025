@@ -81,19 +81,10 @@ class FuzzyController(KesslerController):
 
         # Parameters from GA
         if chromosome is None:
-            chromosome = [
-                0.2, 0.5,
-                0.5, 0.4, 0, 0.5, 0.6, 1, 0.5, 0.4, 0,
-                0.5, 0.5, 0.5, 0.5,
-                0.1, 0.4, 1, 0, 0.2, 0.6, 0, 0.1, 0.2,
-                0, 0.1, 0.5, 0.2, 0.3, 0.7, 0.3, 0.7, 1,
-                1,
-                0.2, 0.5,
-                0.5, 0.4, 0, 0.5, 0.6, 1, 0.5, 0.4, 0,
-                0.5, 0.5, 0.5, 0.5,
-                0.1, 0.4, 1, 0, 0.2, 0.6, 0.2, 0.1, 0.2,
-                0.2, 0.1, 0.5, 0.2, 0.3, 0.7, 0.3, 0.7, 1,
-                1
+            chromosome = [0.4, 1.,  0.7, 0.1, 1.,  0.4, 0.7, 0.,  0.1, 1.,  0.,  0.5, 0.6, 0.1, 0.1, 0.7, 0.2, 0.2,
+            0.8,0.,  0.1, 0.2, 0.,  0.7, 0.6, 0.2, 0.5, 0.7, 0.8, 0.8, 0.6, 0.5, 1.,  0.1, 1.,  0.3,
+            1.,  0.5, 0.7, 0.6, 1.,  1.,  0.,  0.6, 0.2, 0.2, 0.5, 0.5, 0.7, 0.6, 0.7, 0.1, 0.2, 0.4,
+            0.4, 0.9, 0.9, 0.3, 0.7
             ]
 
 
@@ -238,7 +229,7 @@ class FuzzyController(KesslerController):
 
 
 
-        if threat_scalar < 10:
+        if threat_sum < 10:
 
 
 
@@ -356,11 +347,11 @@ class FuzzyController(KesslerController):
                     az_mfs,
                     thrust_distance_mfs,
                     rule_constants_thrust,
-                )
+                )-0.5
 
                 threat_avoidance_sum = threat_avoidance
 
-            turn_angle = threat_avoidance_sum * turn_scalar * 500
+            turn_angle = threat_avoidance_sum * turn_scalar * 1000
 
 
             

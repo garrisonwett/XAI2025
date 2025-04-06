@@ -50,7 +50,7 @@ if __name__ == "__main__":
         "--game_type",
         choices=["KesslerGame", "TrainerEnvironment"],
         type=str,
-        default="TrainerEnvironment",  
+        default="KesslerGame",  
         help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for max-speed, no-graphics simulation.",
     )
 
