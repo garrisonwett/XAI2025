@@ -84,7 +84,7 @@ class FuzzyController(KesslerController):
             chromosome = [0.4, 1.,  0.7, 0.1, 1.,  0.4, 0.7, 0.,  0.1, 1.,  0.,  0.5, 0.6, 0.1, 0.1, 0.7, 0.2, 0.2,
             0.8,0.,  0.1, 0.2, 0.,  0.7, 0.6, 0.2, 0.5, 0.7, 0.8, 0.8, 0.6, 0.5, 1.,  0.1, 1.,  0.3,
             1.,  0.5, 0.7, 0.6, 1.,  1.,  0.,  0.6, 0.2, 0.2, 0.5, 0.5, 0.7, 0.6, 0.7, 0.1, 0.2, 0.4,
-            0.4, 0.9, 0.9, 0.3, 0.7
+            0.4, 0.9, 0.9, 0.3, 0.7, 0.5
             ]
 
 
@@ -153,6 +153,7 @@ class FuzzyController(KesslerController):
         )
 
         turn_scalar = chromosome[58]
+        threat_sum_scalar = chromosome[59]
 
         thrust = EPS
 
@@ -181,7 +182,55 @@ class FuzzyController(KesslerController):
         )
 
 
-        threat_sum = 0
+        # Assign Asteroids Threat Values
+
+        for i, pos in enumerate(relative_positions_sorted):
+
+            asteroid_distance = distances_sorted[i]  # Use precomputed distance
+
+            closure_rate = _calculate_closure_rate(
+                ship_state["position"],  # Ship position
+                ship_state["heading"],  # Ship heading
+                ship_state["speed"],  # Ship speed
+                pos,  # Asteroid position
+                asteroid_velocities_sorted[i],  # Asteroid velocity
+            )
+
+            # Avoid division by zero edge cases.
+            if closure_rate == 0 or closure_rate == 1:
+                closure_rate = 0.99999
+
+            relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
+
+            # Avoid division by zero edge cases.
+            if relative_heading == 0 or relative_heading == 1:
+                relative_heading = 0.99999
+
+            size = asteroid_radii[i] / 4  # Normalize size to a range of 0-1
+
+            # Normalize distance.
+            distance_norm = min(50 / (asteroid_distance + EPS), 0.99999)
+
+
+            
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         for i, pos in enumerate(relative_positions_sorted):
 
             asteroid_distance = distances_sorted[i]  # Use precomputed distance
@@ -199,7 +248,7 @@ class FuzzyController(KesslerController):
             )
             # Avoid division by zero edge cases.
             if closure_rate == 0 or closure_rate == 1:
-                relative_heading = 0.99999
+                closure_rate = 0.99999
 
             # Normalize distance.
             distance_norm = min(50 / (asteroid_distance + 0.0001), 0.99999)
@@ -215,7 +264,7 @@ class FuzzyController(KesslerController):
 
             threat_sum += threat
 
-        threat_sum = threat_sum * threat_scalar
+        threat_sum = threat_sum * threat_scalar * 10
 
 
 
@@ -229,7 +278,7 @@ class FuzzyController(KesslerController):
 
 
 
-        if threat_sum < 10:
+        if threat_sum < 10 * threat_sum_scalar:
 
 
 
@@ -324,7 +373,7 @@ class FuzzyController(KesslerController):
 
         else:
 
-            
+            threat_avoidance_sum = 0
             for i, pos in enumerate(relative_positions_sorted):
                 asteroid_distance = distances_sorted[i]  # Use precomputed distance
                 # Skip asteroids that are too far.
