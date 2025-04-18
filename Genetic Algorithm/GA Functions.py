@@ -43,8 +43,8 @@ game_settings = {
 # 2. GA Parameters
 # ----------------------------
 
-POPULATION_SIZE = 500
-MAX_GENERATIONS = 1000
+POPULATION_SIZE = 20
+MAX_GENERATIONS = 100
 MUTATION_RATE   = 0.35
 MUTATION_DECAY = 0.90
 CROSSOVER_RATE  = 0.7
@@ -158,6 +158,7 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
     fitness_age = 0
     
     for generation in range(MAX_GENERATIONS):
+        print(generation)
         # 2. Evaluate fitness for each individual
 
         gen_start_time = time.perf_counter()  # For performance tracking of each generation
@@ -168,6 +169,7 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
 
         with multiprocessing.Pool() as pool:
             fitnesses = pool.map(fitness_function, population)
+            
         # Track the best in the current generation
         current_best_fit = max(fitnesses)
         current_best_ind = population[fitnesses.index(current_best_fit)]
@@ -234,6 +236,7 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
 # ----------------------------
 
 def fitness_function(chromosome):
+
     """
     Inputs:
         chromosome - 1D NumPy array - Chromosome to evaluate
