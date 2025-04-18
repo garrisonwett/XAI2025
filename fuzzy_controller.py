@@ -98,20 +98,19 @@ class FuzzyController(KesslerController):
             0.4, 0.9, 0.9, 0.3, 0.7, 0.5
             ]
 
-        print(len(chromosome))
         # Best Chromosome from GA: [0.5 0.5 0.6 0.1 0.  0.3 1.  0.6 0.8 0.  0.4 0.4 0.9 0.4 0.8 0.2 0.9 0.4 0.6 0.4 0.  0.6 0.3 0.7 0.8 0.8 0.4 0.1 0.6 0.3 0.5 0.2 0.4]
         # Thrust Parameters
 
         # Scalar Values
-        threat_sum_scalar_1, chromosome[:] = chromosome[0], chromosome[1:]
-        thrust_sum_scalar_4, chromosome[:] = chromosome[0], chromosome[1:]
+        threat_sum_scalar_1, chromosome = chromosome[0], chromosome[1:]
+        thrust_sum_scalar_4, chromosome = chromosome[0], chromosome[1:]
 
 
 
 
         # FIS 1
-        closure_centers_1, chromosome[:] = chromosome[:1], chromosome[1:]
-        distance_centers_1, chromosome[:] = chromosome[:1], chromosome[1:]
+        closure_centers_1, chromosome = chromosome[:1], chromosome[1:]
+        distance_centers_1, chromosome = chromosome[:1], chromosome[1:]
 
         closure_mfs_1 = ft.build_triangles(closure_centers_1)
         distance_mfs_1 = ft.build_triangles(distance_centers_1)
@@ -123,8 +122,8 @@ class FuzzyController(KesslerController):
 
 
         # FIS 2
-        relative_heading_centers_2, chromosome[:] = chromosome[:1], chromosome[1:]
-        size_centers_2, chromosome[:] = chromosome[:1], chromosome[1:]
+        relative_heading_centers_2, chromosome = chromosome[:1], chromosome[1:]
+        size_centers_2, chromosome = chromosome[:1], chromosome[1:]
 
         relative_heading_mfs_2 = ft.build_triangles(relative_heading_centers_2)
         size_mfs_2 = ft.build_triangles(size_centers_2)
@@ -136,8 +135,8 @@ class FuzzyController(KesslerController):
 
 
         # FIS 3
-        fis_centers_1_3, chromosome[:] = chromosome[:1], chromosome[1:]
-        fis_centers_2_3, chromosome[:] = chromosome[:1], chromosome[1:]
+        fis_centers_1_3, chromosome = chromosome[:1], chromosome[1:]
+        fis_centers_2_3, chromosome = chromosome[:1], chromosome[1:]
 
         threat_fis_mfs_1 = ft.build_triangles(fis_centers_1_3)
         threat_fis_mfs_2 = ft.build_triangles(fis_centers_2_3)
@@ -149,8 +148,8 @@ class FuzzyController(KesslerController):
 
 
         # FIS 4
-        az_centers_4, chromosome[:] = chromosome[:1], chromosome[1:]
-        thrust_distance_centers_4, chromosome[:] = chromosome[:1], chromosome[1:]
+        az_centers_4, chromosome = chromosome[:1], chromosome[1:]
+        thrust_distance_centers_4, chromosome = chromosome[:1], chromosome[1:]
 
         az_mfs_4 = ft.build_triangles(az_centers_4)
         thrust_distance_mfs_4 = ft.build_triangles(thrust_distance_centers_4)
@@ -162,8 +161,8 @@ class FuzzyController(KesslerController):
 
 
         # FIS 5
-        az_centers_5, chromosome[:] = chromosome[:1], chromosome[1:]
-        distance_centers_5, chromosome[:] = chromosome[:1], chromosome[1:]
+        az_centers_5, chromosome = chromosome[:1], chromosome[1:]
+        distance_centers_5, chromosome = chromosome[:1], chromosome[1:]
 
         az_mfs_5 = ft.build_triangles(az_centers_5)
         distance_mfs_5 = ft.build_triangles(distance_centers_5)
@@ -176,8 +175,8 @@ class FuzzyController(KesslerController):
 
         # FIS 6
 
-        relative_heading_centers_6, chromosome[:] = chromosome[:1], chromosome[1:]
-        fis_centers_1_6, chromosome[:] = chromosome[:1], chromosome[1:]
+        relative_heading_centers_6, chromosome = chromosome[:1], chromosome[1:]
+        fis_centers_1_6, chromosome = chromosome[:1], chromosome[1:]
 
         relative_heading_mfs_6 = ft.build_triangles(relative_heading_centers_6)
         defensive_fis_mfs_1_6 = ft.build_triangles(fis_centers_1_6)
@@ -262,7 +261,6 @@ class FuzzyController(KesslerController):
                 asteroid_velocities_sorted[i],  # Asteroid velocity
             )
             closure_rate = min(max((closure_rate+200)/400, 0), 1)
-            print(closure_rate)
             # Avoid division by zero edge cases.
             
 

@@ -146,7 +146,7 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
     Purpose:
         Optimizes the Membership Functions for the Kessler Game using a Genetic Algorithm.
     """
-    chromosome_size = 60  # number of genes in the chromosome
+    chromosome_size = 90  # number of genes in the chromosome
     
     # 1. Initialize population
     population = [create_random_individual(chromosome_size) for _ in range(POPULATION_SIZE)]
@@ -165,7 +165,6 @@ def genetic_algorithm(POPULATION_SIZE=2, MAX_GENERATIONS=2, mutation_rate=0.2, c
 
         mutation_rate = MUTATION_RATE - 0.9*(MUTATION_RATE * (generation / MAX_GENERATIONS))  # Decay mutation rate over generations
         crossover_rate = CROSSOVER_RATE + (CROSSOVER_INCREASE - CROSSOVER_RATE) * (generation / MAX_GENERATIONS)  # Increase crossover rate over generations
-
 
         with multiprocessing.Pool() as pool:
             fitnesses = pool.map(fitness_function, population)
