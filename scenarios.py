@@ -1,11 +1,11 @@
 from typing import Dict
-
+import numpy as np
 from kesslergame.scenario import Scenario
 
 scenarios: Dict[str, Scenario] = {
     "random_repeatable": Scenario(
         name="random_repeatable",
-        num_asteroids=7,
+        num_asteroids=10,
         asteroid_states=None,
         ship_states=[{"position": (400, 400), "angle": 90, "lives": 3, "team": 1}],
         map_size=(1000, 800),
@@ -48,8 +48,8 @@ scenarios: Dict[str, Scenario] = {
         name="avoid",
         ship_states=[{"position": (600, 200), "angle": 0, "lives": 5, "team": 1,}],
         asteroid_states=[
-            {"position": (400, 200), "angle": 0.0, "speed": 150, "size": 2},
-            {"position": (700, 200), "angle": 0.0, "speed": 150, "size": 2}
+            {"position": (400, 200), "angle": 0.0, "speed": 150, "size": 3},
+            {"position": (700, 200), "angle": 0.0, "speed": 150, "size": 3}
         ],
         map_size=(1200, 900),
         time_limit=90,
@@ -73,9 +73,9 @@ scenarios: Dict[str, Scenario] = {
     name="crush",
     asteroid_states=[
         {"position": (200, 200), "angle": 50.0, "speed": 40, "size": 4},
-        {"position": (300, 200), "angle": 60.0, "speed": 40, "size": 3},
-        {"position": (400, 200), "angle": 70.0, "speed": 40, "size": 2},
-        {"position": (500, 200), "angle": 90.0, "speed": 40, "size": 1},
+        {"position": (300, 200), "angle": 60.0, "speed": 40, "size": 4},
+        {"position": (400, 200), "angle": 70.0, "speed": 40, "size": 4},
+        {"position": (500, 200), "angle": 90.0, "speed": 40, "size": 4},
         
     ],
     ship_states=[{"position": (500, 500)}],
@@ -85,13 +85,26 @@ scenarios: Dict[str, Scenario] = {
     name="training",
     ship_states=[{"position": (400, 400), "angle": 0, "lives": 5, "team": 1}],
     asteroid_states=[
-        {"position": (200, 200), "angle": 0.0, "speed": 150, "size": 4},
-        {"position": (800, 200), "angle": 90.0, "speed": 150, "size": 4},
-        {"position": (200, 800), "angle": 180.0, "speed": 150, "size": 4},
-        {"position": (800, 800), "angle": 270.0, "speed": 150, "size": 4},
-        {"position": (30, 410), "angle": 0.0, "speed": 50, "size": 4},
+        {"position": (100, 100), "angle": 10, "speed": 100, "size": 4},
+        {"position": (200, 100), "angle": 20, "speed": 100, "size": 4},
+        {"position": (300, 100), "angle": 30, "speed": 100, "size": 4},
+        {"position": (400, 100), "angle": 40, "speed": 100, "size": 4},
+        {"position": (500, 100), "angle": 50, "speed": 100, "size": 4},
+        {"position": (600, 100), "angle": 60, "speed": 100, "size": 4},
+        {"position": (700, 100), "angle": 70, "speed": 100, "size": 4},
+        {"position": (800, 100), "angle": 80, "speed": 100, "size": 4},
+        {"position": (100, 700), "angle": 90, "speed": 100, "size": 4},
+        {"position": (200, 700), "angle": 100, "speed": 100, "size": 4},
+        {"position": (300, 700), "angle": 110, "speed": 100, "size": 4},
+        {"position": (400, 700), "angle": 120, "speed": 100, "size": 4},
+        {"position": (500, 700), "angle": 130, "speed": 100, "size": 4},
+        {"position": (600, 700), "angle": 140, "speed": 100, "size": 4},
+        {"position": (700, 700), "angle": 150, "speed": 100, "size": 4},
+        {"position": (800, 700), "angle": 160, "speed": 100, "size": 4},
+
     ],
     )
 
     # Add more scenarios here
 }
+

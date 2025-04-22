@@ -92,11 +92,7 @@ class FuzzyController(KesslerController):
 
         # Parameters from GA
         if chromosome is None:
-            chromosome = [0.4, 1.,  0.7, 0.1, 1.,  0.4, 0.7, 0.,  0.1, 1.,  0.,  0.5, 0.6, 0.1, 0.1, 0.7, 0.2, 0.2,
-            0.8,0.,  0.1, 0.2, 0.,  0.7, 0.6, 0.2, 0.5, 0.7, 0.8, 0.8, 0.6, 0.5, 1.,  0.1, 1.,  0.3,
-            1.,  0.5, 0.7, 0.6, 1.,  1.,  0.,  0.6, 0.2, 0.2, 0.5, 0.5, 0.7, 0.6, 0.7, 0.1, 0.2, 0.4,
-            0.4, 0.9, 0.9, 0.3, 0.7, 0.5
-            ]
+            chromosome = [0.986685763250257, 0.11897698398758982, 0.527172619863428, 0.17554819486149786, 0.7457789923542897, 0.6034152043130956, 0.6474099073243775, 0.22705814965578175, 0.19760117835694113, 0.07421788060480106, 0.46676932364375134, 0.08231909078672905, 0.7018862113075057, 0.01204481098597443, 0.9987499827221732, 0.6402721519902216, 0.7559413290717322, 0.3223949588617715, 0.983282617244198, 0.3280928624518903, 0.1690174605853152, 0.49207577367964106, 0.7540828238435472, 0.6012148658698075, 0.8621269833587478, 0.28221565909094415, 0.29560426806778584, 0.6998253306695649, 0.0931667874612363, 0.4795612112926, 0.02274090770377002, 0.9235470405608984, 0.3097170903564881, 0.18766489481270232, 0.34212079093345604, 0.27166564772686586, 0.5340333356942554, 0.14040433592041202, 0.8104304797473486, 0.1395994419115959, 0.3251991616820943, 0.4492005632208831, 0.26110268701165706, 0.6448738692079773, 0.20385494054710107, 0.28176099508220565, 0.0015862601789305986, 0.46991532576701756, 0.8274525940533309, 0.6337103465009933, 0.05500232722968257, 0.15181486206383654, 0.5046434138867049, 0.842835502674288, 0.183402018666456, 0.12987170863039388, 0.5785167218591184, 0.4351144434607481, 0.5385610737915584, 0.8679355528412515, 0.8687825489143148, 0.3125259537177082, 0.23489158265893895, 0.6700637652625376, 0.10641061038399158, 0.7795202245964037, 0.6517197057217712, 0.4571704345120231]
 
         # Best Chromosome from GA: [0.5 0.5 0.6 0.1 0.  0.3 1.  0.6 0.8 0.  0.4 0.4 0.9 0.4 0.8 0.2 0.9 0.4 0.6 0.4 0.  0.6 0.3 0.7 0.8 0.8 0.4 0.1 0.6 0.3 0.5 0.2 0.4]
         # Thrust Parameters
@@ -304,9 +300,6 @@ class FuzzyController(KesslerController):
 
 
 
-
-
-
         # Determine which mode to operate in (threat avoidance or threat shooting)    
         
         previous_mode = self.mode
@@ -316,12 +309,11 @@ class FuzzyController(KesslerController):
         else:
             self.mode = "Offensive"
 
-        if self.mode != previous_mode:
-            print(f"Mode changed to: {self.mode}")
+        # if self.mode != previous_mode:
+        #     print(f"Mode changed to: {self.mode}")
 
 
         # Offensive Mode
-        self.mode = "Offensive"
         if self.mode == "Offensive":
             threat_index = np.argmax(threat_array)
             
@@ -370,7 +362,7 @@ class FuzzyController(KesslerController):
 
                 thrust += thrust_sum
 
-            thrust = thrust * 2000 * thrust_sum_scalar_4
+            thrust = thrust * 200 * thrust_sum_scalar_4
 
 
         if self.mode == "Defensive":
@@ -434,7 +426,7 @@ class FuzzyController(KesslerController):
                     heading_array = np.append(relative_heading)
 
                 aim_point = vm.largest_gap_center(heading_array)
-
+                print("Gap Search")
                 turn_angle, on_target = vm.go_to_angle(
                 ship_state["heading"],
                 ship_state["turn_rate_range"],
@@ -492,7 +484,7 @@ class FuzzyController(KesslerController):
 
                     thrust += thrust_sum
 
-                thrust = thrust * 2000 * thrust_sum_scalar_4
+                thrust = thrust * 200 * thrust_sum_scalar_4
 
 
             
