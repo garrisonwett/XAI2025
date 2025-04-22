@@ -323,7 +323,7 @@ if __name__ == '__main__':
 
     CHROMOSOME_SIZE = 68  # Number of genes in each individual
     POPULATION_SIZE = 30
-    MAX_GENERATIONS = 50
+    MAX_GENERATIONS = 30
     MUTATION_RATE   = 0.35
     MUTATION_DECAY = 0.90
     CROSSOVER_RATE  = 0.7

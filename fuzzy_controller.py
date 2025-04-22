@@ -31,14 +31,14 @@ class FuzzyController(KesslerController):
 
         self._name: str = "BajaBlasteroids"
 
-
+        self.counter = 1
         self.mode = "Avoidance"
 
         # Ship Variables
 
         
 
-
+        self.asteroids_shot_at = []
 
 
 
@@ -66,13 +66,17 @@ class FuzzyController(KesslerController):
         self, chromosome, ship_state: "ShipOwnState", game_state: "GameState"
     ) -> "ActionsReturn":
         
+
+
+
         EPS = 1e-6
         thrust = EPS
         turn_angle = EPS
         shoot = False
-
-            # Start total runtime measurement.
-        total_start = time.time()
+        self.counter += 1
+        if self.counter % 80 == 0:
+            self.asteroids_shot_at = []
+            self.counter = 1
         """The actions method for the fuzzy controller."""
 
         # === Optimization Changes ===
@@ -92,7 +96,7 @@ class FuzzyController(KesslerController):
 
         # Parameters from GA
         if chromosome is None:
-            chromosome = [0.986685763250257, 0.11897698398758982, 0.527172619863428, 0.17554819486149786, 0.7457789923542897, 0.6034152043130956, 0.6474099073243775, 0.22705814965578175, 0.19760117835694113, 0.07421788060480106, 0.46676932364375134, 0.08231909078672905, 0.7018862113075057, 0.01204481098597443, 0.9987499827221732, 0.6402721519902216, 0.7559413290717322, 0.3223949588617715, 0.983282617244198, 0.3280928624518903, 0.1690174605853152, 0.49207577367964106, 0.7540828238435472, 0.6012148658698075, 0.8621269833587478, 0.28221565909094415, 0.29560426806778584, 0.6998253306695649, 0.0931667874612363, 0.4795612112926, 0.02274090770377002, 0.9235470405608984, 0.3097170903564881, 0.18766489481270232, 0.34212079093345604, 0.27166564772686586, 0.5340333356942554, 0.14040433592041202, 0.8104304797473486, 0.1395994419115959, 0.3251991616820943, 0.4492005632208831, 0.26110268701165706, 0.6448738692079773, 0.20385494054710107, 0.28176099508220565, 0.0015862601789305986, 0.46991532576701756, 0.8274525940533309, 0.6337103465009933, 0.05500232722968257, 0.15181486206383654, 0.5046434138867049, 0.842835502674288, 0.183402018666456, 0.12987170863039388, 0.5785167218591184, 0.4351144434607481, 0.5385610737915584, 0.8679355528412515, 0.8687825489143148, 0.3125259537177082, 0.23489158265893895, 0.6700637652625376, 0.10641061038399158, 0.7795202245964037, 0.6517197057217712, 0.4571704345120231]
+            chromosome = [0.5054620341203, 0.35227394310230686, 0.7270104041431233, 0.7469605198722857, 0.09088681695624667, 0.9432543396386281, 0.1460516933062569, 0.21867383506971927, 0.017368083269695633, 0.4084349141146495, 0.50565185998755, 0.3321568304657476, 0.0392346722438347, 0.6931627119905528, 0.10413222098179764, 0.008309377118513539, 0.32808248300359844, 0.281067056426199, 0.7786412275358762, 0.23752480718875468, 0.746980346317742, 0.9263835697560074, 0.027774544104996024, 0.2604765107095661, 0.5611644213979314, 0.2819827928396059, 0.12844425796859504, 0.5115118033843671, 0.1363668085893407, 0.048708315080844944, 0.7469999714987197, 0.0934333187796178, 0.3669504495043865, 0.005064153316280184, 0.8418929017521442, 0.30434074687302215, 0.7221458496257337, 0.7154719808829245, 0.31476618157873504, 0.27191762800682595, 0.4547050760840917, 0.7588653076130226, 0.15565790940503643, 0.039365520349106675, 0.8395958662653341, 0.5557296013974561, 0.0911859420146165, 0.5585725339350349, 0.1167839656021582, 0.7881699513470972, 0.07336809452446569, 0.4769072742599516, 0.2063749127594735, 0.28173535149226714, 0.6139422842076436, 0.2959213493414222, 0.005479404866863269, 0.27604005994830094, 0.47293914944766524, 0.28984840003501233, 0.7322459457897276, 0.5179251220589425, 0.43493890297848414, 0.5458581451096611, 0.10941811189854489, 0.18983710999633663, 0.019754024986757046, 0.28483485640771133]
 
         # Best Chromosome from GA: [0.5 0.5 0.6 0.1 0.  0.3 1.  0.6 0.8 0.  0.4 0.4 0.9 0.4 0.8 0.2 0.9 0.4 0.6 0.4 0.  0.6 0.3 0.7 0.8 0.8 0.4 0.1 0.6 0.3 0.5 0.2 0.4]
         # Thrust Parameters
@@ -244,7 +248,7 @@ class FuzzyController(KesslerController):
         threat_array = []
         proximity_threat = 0
         for i, pos in enumerate(relative_positions_sorted):
-
+ 
             asteroid_distance = distances_sorted[i]  # Use precomputed distance
             distance_norm = min(50 / (asteroid_distance + EPS), 0.99999)
 
@@ -292,6 +296,7 @@ class FuzzyController(KesslerController):
                 rule_constants_threat_3,
             )
 
+
             # Append the threat value to the list.
             threat_array.append(asteroid_threat)
 
@@ -315,7 +320,19 @@ class FuzzyController(KesslerController):
 
         # Offensive Mode
         if self.mode == "Offensive":
-            threat_index = np.argmax(threat_array)
+
+            shot_set = set(self.asteroids_shot_at)
+
+            # get all indices, sorted by threat strength (descending)
+            sorted_idxs = np.argsort(threat_array)[::-1]
+
+            # scan until you find one not yet shot
+            threat_index = -1
+            for idx in sorted_idxs:
+                if idx not in shot_set:
+                    threat_index = idx
+                    self.asteroids_shot_at.append(threat_index)
+                    break
             
             # Calculate turn angle using the most threatening asteroid.
             turn_angle, on_target = vm.turn_angle(
@@ -330,6 +347,7 @@ class FuzzyController(KesslerController):
 
             # Determine if we should shoot.
             if on_target:
+                self.asteroids_shot_at.append(threat_index)
                 shoot = True
 
 
