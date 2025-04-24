@@ -7,7 +7,7 @@ from datetime import datetime
 import numpy as np
 from kesslergame import GraphicsType, KesslerGame, Scenario, TrainerEnvironment
 import multiprocessing
-
+import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -140,7 +140,7 @@ def genetic_algorithm(CHROMOSOME_SIZE=80,POPULATION_SIZE=2, MAX_GENERATIONS=200,
         Optimizes the Membership Functions for the Kessler Game using a Genetic Algorithm.
     """
 
-    
+    fitness_tracker = []  # Track the best fitness for plotting later
     # 1. Initialize population
     population = [create_random_individual(CHROMOSOME_SIZE) for _ in range(POPULATION_SIZE)]
     best_solution_ever = None
@@ -171,6 +171,9 @@ def genetic_algorithm(CHROMOSOME_SIZE=80,POPULATION_SIZE=2, MAX_GENERATIONS=200,
         
         print(f"Generation {generation}, Best Fitness this generation{current_best_fit:.6f}, Best Fitness so far: {best_fitness_ever:.6f}")
         print(f"Current Best Individual: {best_solution_ever}")  # For debugging purposes
+
+        fitness_tracker.append(best_fitness_ever)  # Track the best fitness for plotting later
+
         # 3. Generate new population
         new_population = []
 
@@ -220,7 +223,7 @@ def genetic_algorithm(CHROMOSOME_SIZE=80,POPULATION_SIZE=2, MAX_GENERATIONS=200,
         best_solution_ever = final_best_ind.copy()
         best_fitness_ever = fitness_function(final_best_ind)
     
-    return best_solution_ever, best_fitness_ever
+    return best_solution_ever, best_fitness_ever, fitness_tracker
 
 
 
@@ -286,7 +289,7 @@ def fitness_function(chromosome):
 
     fitness_sum = 0
     
-    for _ in range(5):
+    for _ in range(2):
         initial_time = time.perf_counter()
         score, perf_data = game.run(
             chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
@@ -322,17 +325,16 @@ if __name__ == '__main__':
     purpose = "Changed to use any float instead of 0, 0.1, 0.2, ... 0.9"
 
     CHROMOSOME_SIZE = 68  # Number of genes in each individual
-    POPULATION_SIZE = 30
-    MAX_GENERATIONS = 30
+    POPULATION_SIZE = 200
+    MAX_GENERATIONS = 5000
     MUTATION_RATE   = 0.35
-    MUTATION_DECAY = 0.90
-    CROSSOVER_RATE  = 0.7
-    CROSSOVER_INCREASE = 0.95 
+    CROSSOVER_RATE  = 0.5
+    CROSSOVER_INCREASE = 0.9 
     K = 4   
 
 
     start_time = time.perf_counter()
-    best_solution, best_fitness = genetic_algorithm(CHROMOSOME_SIZE,POPULATION_SIZE, MAX_GENERATIONS, MUTATION_RATE, CROSSOVER_RATE, K)
+    best_solution, best_fitness, fitness_tracker = genetic_algorithm(CHROMOSOME_SIZE,POPULATION_SIZE, MAX_GENERATIONS, MUTATION_RATE, CROSSOVER_RATE, K)
 
     print(f"Best Solution: {best_solution}")
     print(f"Best Fitness: {best_fitness:.6f}")
@@ -341,6 +343,15 @@ if __name__ == '__main__':
 
 
 
+    
+    
+    gens = np.linspace(0, MAX_GENERATIONS, len(fitness_tracker))
+    fig,ax = plt.subplots()
+
+    ax.plot(gens, fitness_tracker, label='Best Fitness')
+    ax.set_xlabel('Generation')
+
+    plt.show()
     filename = "genetic_algorithm_results.txt"
     file_exists = os.path.exists(filename)
 
