@@ -258,9 +258,9 @@ def fitness_function(chromosome):
         based on game performance.
     """
     fitness_sum = 0
-    scenario_array = ["training1", "training2", "training3"]
+    scenario_array = ["training1", "training2", "training3", "random_repeatable"]
 
-    for i in range(3):
+    for i in range(len(scenario_array)):
         parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
 
         parser.add_argument(
@@ -290,13 +290,11 @@ def fitness_function(chromosome):
                 game = TrainerEnvironment(settings=game_settings)
 
 
-        initial_time = time.perf_counter()
         score, perf_data = game.run(
             chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
         )
 
         for team in score.teams:
-            accuracy = team.accuracy
             deaths = team.deaths
             asteroids_hit = team.asteroids_hit
 
@@ -325,12 +323,12 @@ if __name__ == '__main__':
     purpose = "Changed to use any float instead of 0, 0.1, 0.2, ... 0.9"
 
     CHROMOSOME_SIZE = 68  # Number of genes in each individual
-    POPULATION_SIZE = 4
-    MAX_GENERATIONS = 4
-    MUTATION_RATE   = 0.35
+    POPULATION_SIZE = 100
+    MAX_GENERATIONS = 1000
+    MUTATION_RATE   = 0.3
     CROSSOVER_RATE  = 0.5
     CROSSOVER_INCREASE = 0.9 
-    K = 4   
+    K = 3   
 
 
     start_time = time.perf_counter()

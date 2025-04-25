@@ -73,6 +73,7 @@ class FuzzyController(KesslerController):
         thrust = EPS
         turn_angle = EPS
         shoot = False
+        avoid = False
         if len(self.asteroids_shot_at) >= 20:
             self.asteroids_shot_at.pop(0) 
         """The actions method for the fuzzy controller."""
