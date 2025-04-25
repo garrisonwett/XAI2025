@@ -257,39 +257,39 @@ def fitness_function(chromosome):
         Plays the Kessler Game with the given chromosome and returns the fitness
         based on game performance.
     """
-
-
-    parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
-
-    parser.add_argument(
-        "--scenario",
-        choices=scenarios.keys(),
-        type=str,
-        default="random_repeatable",
-        help="Select a scenario by name: " + ", ".join(scenarios.keys()),
-    )
-
-    parser.add_argument(
-        "--game_type",
-        choices=["KesslerGame", "TrainerEnvironment"],
-        type=str,
-        default="TrainerEnvironment",
-        help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for fast, no-graphics simulation.",
-    )
-
-    args = parser.parse_args()
-
-    selected_scenario: Scenario = scenarios[args.scenario]
-
-    match args.game_type:
-        case "KesslerGame":
-            game = KesslerGame(settings=game_settings)
-        case "TrainerEnvironment":
-            game = TrainerEnvironment(settings=game_settings)
-
     fitness_sum = 0
-    
-    for _ in range(2):
+    scenario_array = ["training1", "training2", "training3"]
+
+    for i in range(3):
+        parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
+
+        parser.add_argument(
+            "--scenario",
+            choices=scenarios.keys(),
+            type=str,
+            default=scenario_array[i],
+            help="Select a scenario by name: " + ", ".join(scenarios.keys()),
+        )
+
+        parser.add_argument(
+            "--game_type",
+            choices=["KesslerGame", "TrainerEnvironment"],
+            type=str,
+            default="TrainerEnvironment",
+            help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for fast, no-graphics simulation.",
+        )
+
+        args = parser.parse_args()
+
+        selected_scenario: Scenario = scenarios[args.scenario]
+
+        match args.game_type:
+            case "KesslerGame":
+                game = KesslerGame(settings=game_settings)
+            case "TrainerEnvironment":
+                game = TrainerEnvironment(settings=game_settings)
+
+
         initial_time = time.perf_counter()
         score, perf_data = game.run(
             chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
@@ -325,8 +325,8 @@ if __name__ == '__main__':
     purpose = "Changed to use any float instead of 0, 0.1, 0.2, ... 0.9"
 
     CHROMOSOME_SIZE = 68  # Number of genes in each individual
-    POPULATION_SIZE = 200
-    MAX_GENERATIONS = 5000
+    POPULATION_SIZE = 4
+    MAX_GENERATIONS = 4
     MUTATION_RATE   = 0.35
     CROSSOVER_RATE  = 0.5
     CROSSOVER_INCREASE = 0.9 

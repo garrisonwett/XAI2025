@@ -42,7 +42,7 @@ if __name__ == "__main__":
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="random_repeatable",
+        default="training2",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
 

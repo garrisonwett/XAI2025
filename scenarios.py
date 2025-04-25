@@ -81,9 +81,9 @@ scenarios: Dict[str, Scenario] = {
     ship_states=[{"position": (500, 500)}],
     ),
 
-    "training": Scenario(
-    name="training",
-    ship_states=[{"position": (400, 400), "angle": 0, "lives": 5, "team": 1}],
+    "training1": Scenario(
+    name="training1",
+    ship_states=[{"position": (400, 400), "angle": 90, "lives": 5, "team": 1}],
     asteroid_states=[
         {"position": (100, 100), "angle": 10, "speed": 100, "size": 4},
         {"position": (200, 100), "angle": 20, "speed": 100, "size": 4},
@@ -102,6 +102,32 @@ scenarios: Dict[str, Scenario] = {
         {"position": (700, 700), "angle": 150, "speed": 100, "size": 4},
         {"position": (800, 700), "angle": 160, "speed": 100, "size": 4},
 
+    ],
+    ),
+
+        "training2": Scenario(
+    name="training2",
+    ship_states=[{"position": (400, 400), "angle": 90, "lives": 5, "team": 1}],
+    asteroid_states=[
+        {"position": (100, 100), "angle": 0, "speed": 100, "size": 4},
+        {"position": (100, 200), "angle": 0, "speed": 100, "size": 4},
+        {"position": (100, 300), "angle": 0, "speed": 100, "size": 4},
+        {"position": (100, 400), "angle": 0, "speed": 100, "size": 4},
+        {"position": (100, 500), "angle": 0, "speed": 100, "size": 4},
+        {"position": (100, 600), "angle": 0, "speed": 100, "size": 4},
+        {"position": (100, 700), "angle": 0, "speed": 100, "size": 4},
+
+    ],
+    ),
+
+            "training3": Scenario(
+    name="training3",
+    ship_states=[{"position": (400, 400), "angle": 90, "lives": 5, "team": 1}],
+    asteroid_states=[
+        {"position": (100, 100), "angle": 45, "speed": 100, "size": 4},
+        {"position": (700, 700), "angle": 225, "speed": 100, "size": 4},
+        {"position": (100, 700), "angle": 315, "speed": 100, "size": 4},
+        {"position": (700, 100), "angle": 135, "speed": 100, "size": 4},
     ],
     )
 

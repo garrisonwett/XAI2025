@@ -401,18 +401,20 @@ def go_to_angle(
     left_threshold = left_turn_rate * delta_time
     right_threshold = right_turn_rate * delta_time
 
+    aim_tolerance = 0.3
+
     # Determine the appropriate turn rate based on the sign and magnitude of angle_delta.
     if 0 < angle_delta < 180:
         if angle_delta < left_threshold:
             return left_turn_rate, False
-        elif angle_delta < 1:
+        elif angle_delta < aim_tolerance:
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False
     else:
         if angle_delta > right_threshold:
             return right_turn_rate, False
-        elif angle_delta > -1:
+        elif angle_delta > -aim_tolerance:
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False

@@ -73,10 +73,8 @@ class FuzzyController(KesslerController):
         thrust = EPS
         turn_angle = EPS
         shoot = False
-        self.counter += 1
-        if self.counter % 80 == 0:
-            self.asteroids_shot_at = []
-            self.counter = 1
+        if len(self.asteroids_shot_at) >= 20:
+            self.asteroids_shot_at.pop(0) 
         """The actions method for the fuzzy controller."""
 
         # === Optimization Changes ===
@@ -196,11 +194,6 @@ class FuzzyController(KesslerController):
 
 
 
-
-
-
-
-
         thrust = EPS
 
         # Get asteroid properties from the game state.
@@ -227,8 +220,9 @@ class FuzzyController(KesslerController):
             list, zip(*asteroid_data)
         )
 
-
-
+        ship_respawining = False
+        if ship_state["is_respawning"] == True:
+            ship_respawining = True
 
 
 
@@ -308,7 +302,7 @@ class FuzzyController(KesslerController):
         
         previous_mode = self.mode
 
-        if proximity_threat > 20 * threat_sum_scalar_1:
+        if ship_respawining == True or proximity_threat > 20 * threat_sum_scalar_1:
             self.mode = "Defensive"
         else:
             self.mode = "Offensive"
@@ -432,6 +426,8 @@ class FuzzyController(KesslerController):
                 # Decide to use avoid mode or shooting mode
                 if defensive_fis_output_2 > 0.5:
                     avoid = True
+                else:
+                    avoid = False
             
 
             if avoid == True:
@@ -440,10 +436,9 @@ class FuzzyController(KesslerController):
                 for i, pos in enumerate(relative_positions_sorted):
 
                     relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
-                    heading_array = np.append(relative_heading)
+                    heading_array.append(relative_heading)
 
                 aim_point = vm.largest_gap_center(heading_array)
-                print("Gap Search")
                 turn_angle, on_target = vm.go_to_angle(
                 ship_state["heading"],
                 ship_state["turn_rate_range"],
