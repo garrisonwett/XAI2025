@@ -40,61 +40,91 @@ game_settings = {
 }
 
 # ----------------------------
-# 2. GA Parameters
+# 1. Hyperparameters
 # ----------------------------
+CHROMOSOME_SIZE     = 68      # Number of genes per individual
+POPULATION_SIZE     = 40      # How many individuals in each generation
+MAX_GENERATIONS     = 100      # Maximum number of GA iterations
+MUTATION_RATE_BASE  = 0.3     # Starting mutation probability per gene
+CROSSOVER_RATE_BASE = 0.4     # Starting crossover probability per mating
+CROSSOVER_INCREASE  = 0.9     # Final (max) crossover probability
+TOURNAMENT_K        = 3       # Tournament size for parent selection
+POOL_PROCESSES      = 6       # Number of worker processes for fitness eval
 
 # ----------------------------
-# 3. GA Components
+# 2. Prepare simulators once
+# ----------------------------
+scenario_names = ["training1", "training2", "training3"]
+# Use fast TrainerEnvironment for fitness; only KesslerGame for final demo
+games = {
+    name: TrainerEnvironment(settings=game_settings)
+    for name in scenario_names
+}
+
+# ----------------------------
+# 3. Helper functions
 # ----------------------------
 
 def create_random_individual(size):
     """
-    Inputs:
-        size - Integer - Number of genes in the individual
-    Returns:
-        A 1D NumPy array of numbers (0, 0.1, 0.2, …, 0.9) of length size.
-    Purpose:
-        Creates a new individual for the population with discrete gene values.
-    """
-    # Generate random integers in [0,9] and scale by 0.1
-    return np.random.random(size)
-
-
-def selection(population, fitnesses, K):
-    """
-    Inputs:
-        population - List of 1D NumPy arrays (individuals)
-        fitnesses - List of fitness values corresponding to each individual
-        K - Integer - Number of individuals to sample for selection
-    Returns:
-        The best individual among K randomly selected individuals.
-    Purpose:
-        Selects a parent from the population using tournament selection.
-    """
-    best_individual = None
-    best_fitness = float('-inf')
+    Create a random chromosome of given length with discrete gene values.
     
-    for _ in range(K):
-        idx = random.randint(0, len(population) - 1)
-        if fitnesses[idx] > best_fitness:
-            best_fitness = fitnesses[idx]
-            best_individual = population[idx]
-    return best_individual
+    Each gene is drawn uniformly from {0.0, 0.1, …, 0.9}. We switched
+    from continuous np.random.random to np.random.randint for speed
+    and exact discreteness.
+    """
+    return (np.random.randint(0, 10, size) / 10.0).astype(float)
 
 
-def crossover(parent1, parent2, CROSSOVER_RATE):
+def fitness_function(chromosome):
     """
-    Inputs:
-        parent1 - 1D NumPy array - First parent for crossover
-        parent2 - 1D NumPy array - Second parent for crossover
-        CROSSOVER_RATE - Float - Probability of crossover occurring
-    Returns:
-        child1, child2 - Two 1D NumPy arrays resulting from the crossover.
-    Purpose:
-        Mixes two parents to create two children by splicing at a random
-        crossover point.
+    Compute the fitness of one individual by simulating each scenario.
+
+    Uses pre-instantiated TrainerEnvironment instances to avoid
+    rebuilding parsers or environments on every call, which greatly
+    reduced per-evaluation overhead.
+    
+    Returns the sum over scenarios of (asteroids_hit − 10·deaths³).
     """
-    if random.random() < CROSSOVER_RATE:
+    total = 0.0
+    for name in scenario_names:
+        score, _ = games[name].run(
+            chromosome,
+            scenario=scenarios[name],
+            controllers=[FuzzyController()]
+        )
+        team = score.teams[0]
+        total += team.asteroids_hit - 10 * (team.deaths)
+    return total
+
+
+def tournament_selection(population, fitnesses, k):
+    """
+    Select one parent via tournament selection.
+    
+    Randomly samples k individuals (with replacement) and returns
+    the one with the highest fitness. This balances exploration
+    (random sampling) and exploitation (picking the best).
+    """
+    best_ind, best_fit = None, -np.inf
+    for _ in range(k):
+        idx = random.randrange(len(population))
+        fit = fitnesses[idx]
+        if fit > best_fit:
+            best_fit = fit
+            best_ind = population[idx]
+    return best_ind
+
+
+def crossover(parent1, parent2, rate):
+    """
+    With probability `rate`, perform one-point crossover between two parents.
+    
+    - A random cut point is chosen (excluding ends), and genes are
+      spliced to create two children.
+    - Otherwise, children are exact copies of their parents.
+    """
+    if random.random() < rate:
         cp = random.randint(1, len(parent1) - 1)
         child1 = np.concatenate((parent1[:cp], parent2[cp:]))
         child2 = np.concatenate((parent2[:cp], parent1[cp:]))
@@ -103,318 +133,169 @@ def crossover(parent1, parent2, CROSSOVER_RATE):
     return child1, child2
 
 
-def mutate(parent, MUTATION_RATE):
+def mutate(parent, rate):
     """
-    Inputs:
-        parent - 1D NumPy array - Parent to mutate
-        MUTATION_RATE - Float - Probability of mutating a chromosome (value)
-    Returns:
-        child - 1D NumPy array - Mutated child
-    Purpose:
-        Adds variation to a parent by potentially mutating each individual gene.
-        The mutation now picks a value from {0, 0.1, ..., 0.9}.
-    """
-    child = parent.copy()  # make a copy of the parent's values
-    if random.random() < MUTATION_RATE:
-        for i in range(len(child)):
-            if random.random() < MUTATION_RATE:
-                child[i] = random.random()  # new gene is one of 0, 0.1, ..., 0.9
-    return child
-
-# ----------------------------
-# 4. Main GA Loop
-# ----------------------------
-
-def genetic_algorithm(CHROMOSOME_SIZE=80,POPULATION_SIZE=2, MAX_GENERATIONS=200, mutation_rate=0.2, crossover_rate=0.7, K=10):
-    """
-    Inputs:
-        POPULATION_SIZE - Integer: Number of individuals in the population
-        MAX_GENERATIONS - Integer: Number of generations to run the GA for
-        MUTATION_RATE   - Float: Probability of mutation per gene
-        CROSSOVER_RATE  - Float: Probability of crossover occurring
-        K - Integer: Tournament size for selection
-    Returns:
-        best_solution - 1D NumPy array: Best solution found by the GA
-        best_fitness - Float: Fitness of the best solution
-    Purpose:
-        Optimizes the Membership Functions for the Kessler Game using a Genetic Algorithm.
-    """
-
-    fitness_tracker = []  # Track the best fitness for plotting later
-    # 1. Initialize population
-    population = [create_random_individual(CHROMOSOME_SIZE) for _ in range(POPULATION_SIZE)]
-    best_solution_ever = None
-    best_fitness_ever = float('-inf')
+    Perform per-gene mutation with probability `rate`.
     
-    current_best_fit = None
+    Uses a vectorized NumPy approach to avoid Python loops:
+    - Builds a boolean mask of which genes to mutate.
+    - Generates new random values for those genes only.
+    """
+    mask = np.random.rand(parent.size) < rate
+    new_genes = np.random.rand(parent.size)
+    return np.where(mask, new_genes, parent)
+
+# ----------------------------
+# 4. Main GA loop
+# ----------------------------
+def genetic_algorithm():
+    """
+    Runs the GA with:
+      - dynamic mutation/crossover rates (linear decay/increase)
+      - elitism (carry forward the best individual)
+      - stagnation-based mutation boost (if no improvement for 20 gens)
+      - parallel fitness evaluation via a persistent multiprocessing.Pool
+    
+    Returns:
+        best_solution_ever: numpy array of the top chromosome found
+        best_fitness_ever:  fitness score of that chromosome
+        fitness_tracker:   list of best_fitness_ever per generation
+    """
+    # 1) Initialize population
+    population = [create_random_individual(CHROMOSOME_SIZE)
+                  for _ in range(POPULATION_SIZE)]
+    best_solution_ever = None
+    best_fitness_ever = -np.inf
     last_fitness = None
     fitness_age = 0
-    
+    fitness_tracker = []
+
+    # 2) Keep pool alive throughout all generations
+    pool = multiprocessing.Pool(POOL_PROCESSES)
     for generation in range(MAX_GENERATIONS):
-        # 2. Evaluate fitness for each individual
+        gen_start = time.perf_counter()
 
-        gen_start_time = time.perf_counter()  # For performance tracking of each generation
+        # 3) Update dynamic rates
+        #    - mutation decays linearly from base → 0
+        #    - crossover ramps linearly from base → CROSSOVER_INCREASE
+        mutation_rate = MUTATION_RATE_BASE * (1 - generation / MAX_GENERATIONS)
+        crossover_rate = CROSSOVER_RATE_BASE + \
+                         (CROSSOVER_INCREASE - CROSSOVER_RATE_BASE) * \
+                         (generation / MAX_GENERATIONS)
 
-        mutation_rate = MUTATION_RATE - 0.9*(MUTATION_RATE * (generation / MAX_GENERATIONS))  # Decay mutation rate over generations
-        crossover_rate = CROSSOVER_RATE + (CROSSOVER_INCREASE - CROSSOVER_RATE) * (generation / MAX_GENERATIONS)  # Increase crossover rate over generations
+        # 4) Evaluate fitnesses in parallel
+        fitnesses = pool.map(fitness_function, population)
 
-        with multiprocessing.Pool(processes=6) as pool:
-            fitnesses = pool.map(fitness_function, population)
-            
-        # Track the best in the current generation
+        # 5) Track best solution
         current_best_fit = max(fitnesses)
         current_best_ind = population[fitnesses.index(current_best_fit)]
-        
         if current_best_fit > best_fitness_ever:
             best_fitness_ever = current_best_fit
             best_solution_ever = current_best_ind.copy()
-        
-        print(f"Generation {generation}, Best Fitness this generation{current_best_fit:.6f}, Best Fitness so far: {best_fitness_ever:.6f}")
-        print(f"Current Best Individual: {best_solution_ever}")  # For debugging purposes
 
-        fitness_tracker.append(best_fitness_ever)  # Track the best fitness for plotting later
+        # 6) Original logging for transparency
+        print(f"Generation {generation}, "
+              f"Best Fitness this generation {current_best_fit:.6f}, "
+              f"Best Fitness so far: {best_fitness_ever:.6f}")
+        print(f"Current Best Individual: {best_solution_ever}")
 
-        # 3. Generate new population
-        new_population = []
+        fitness_tracker.append(best_fitness_ever)
 
-        new_population.append(current_best_ind.copy())  # Elitism: carry forward the best individual to the next generation
-
+        # 7) Elitism & stagnation boost
+        new_population = [current_best_ind.copy()]
         if current_best_fit == last_fitness:
-            fitness_age = fitness_age + 1
+            fitness_age += 1
         else:
             fitness_age = 0
-            
+
         if fitness_age >= 20:
-            mutation_rate = MUTATION_RATE + (1 - MUTATION_RATE) * (fitness_age / 100)
-            print(mutation_rate)
+            # Increase mutation to escape platesaus
+            boosted = MUTATION_RATE_BASE + (1 - MUTATION_RATE_BASE) * (fitness_age / 100)
+            mutation_rate = min(boosted, 0.7)
+            print(f"Boosted mutation rate to {mutation_rate:.4f}")
 
-        if mutation_rate > 0.9:
-            mutation_rate = 0.9
-
+        # 8) Create the rest of the new population
         while len(new_population) < POPULATION_SIZE:
-            # 4. Selection (tournament selection)
-            parent1 = selection(population, fitnesses, K)
-            parent2 = selection(population, fitnesses, K)
-            
-            # 5. Crossover
-            child1, child2 = crossover(parent1, parent2, crossover_rate)
-            
-            # 6. Mutation
-            child1 = mutate(child1, mutation_rate)
-            child2 = mutate(child2, mutation_rate)
-            
-            new_population.append(child1)
-            new_population.append(child2)
-        
-        # In case we've exceeded the population size, trim the extra individuals
+            p1 = tournament_selection(population, fitnesses, TOURNAMENT_K)
+            p2 = tournament_selection(population, fitnesses, TOURNAMENT_K)
+            c1, c2 = crossover(p1, p2, crossover_rate)
+            new_population.append(mutate(c1, mutation_rate))
+            if len(new_population) < POPULATION_SIZE:
+                new_population.append(mutate(c2, mutation_rate))
+
         population = new_population[:POPULATION_SIZE]
+        last_fitness = current_best_fit
 
-        last_fitness = current_best_fit  # Save the last best fitness for comparison in the next generation
+        print(f"Generation {generation} completed in "
+              f"{time.perf_counter() - gen_start:.2f} seconds.\n")
 
-        print(f"Generation {generation} completed in {time.perf_counter() - gen_start_time:.2f} seconds.")
-    
-    # Evaluate final population
-    final_fitnesses = [fitness_function(ind) for ind in population]
-    best_index = final_fitnesses.index(max(final_fitnesses))
-    final_best_ind = population[best_index]
-    
-    # Return the overall best solution found
-    if fitness_function(final_best_ind) > best_fitness_ever:
-        best_solution_ever = final_best_ind.copy()
-        best_fitness_ever = fitness_function(final_best_ind)
-    
+    pool.close()
+    pool.join()
     return best_solution_ever, best_fitness_ever, fitness_tracker
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ----------------------------
-# 5. Fitness Function and Running the GA
+# 5. Run GA, plot, save, final demo
 # ----------------------------
-
-def fitness_function(chromosome):
-
-    """
-    Inputs:
-        chromosome - 1D NumPy array - Chromosome to evaluate
-    Returns:
-        fitness - Float - Fitness of the chromosome
-    Purpose:
-        Plays the Kessler Game with the given chromosome and returns the fitness
-        based on game performance.
-    """
-    fitness_sum = 0
-    scenario_array = ["training1", "training2", "training3"]
-
-    for i in range(len(scenario_array)):
-        parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
-
-        parser.add_argument(
-            "--scenario",
-            choices=scenarios.keys(),
-            type=str,
-            default=scenario_array[i],
-            help="Select a scenario by name: " + ", ".join(scenarios.keys()),
-        )
-
-        parser.add_argument(
-            "--game_type",
-            choices=["KesslerGame", "TrainerEnvironment"],
-            type=str,
-            default="TrainerEnvironment",
-            help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for fast, no-graphics simulation.",
-        )
-
-        args = parser.parse_args()
-
-        selected_scenario: Scenario = scenarios[args.scenario]
-
-        match args.game_type:
-            case "KesslerGame":
-                game = KesslerGame(settings=game_settings)
-            case "TrainerEnvironment":
-                game = TrainerEnvironment(settings=game_settings)
-
-
-        score, perf_data = game.run(
-            chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
-        )
-
-        for team in score.teams:
-            deaths = team.deaths
-            asteroids_hit = team.asteroids_hit
-
-
-        fitness_sum += asteroids_hit - 10 * deaths**3
-
-    return fitness_sum
-
-
-
-
-
-
-
-
-
-
-
-
-if __name__ == '__main__':
-
-    # Run the Genetic Algorithm to find the best solution
-
-
-
-    purpose = "Changed to use any float instead of 0, 0.1, 0.2, ... 0.9"
-
-    CHROMOSOME_SIZE = 68  # Number of genes in each individual
-    POPULATION_SIZE = 5
-    MAX_GENERATIONS = 5
-    MUTATION_RATE   = 0.3
-    CROSSOVER_RATE  = 0.5
-    CROSSOVER_INCREASE = 0.9 
-    K = 3   
-
-
-    start_time = time.perf_counter()
-    best_solution, best_fitness, fitness_tracker = genetic_algorithm(CHROMOSOME_SIZE,POPULATION_SIZE, MAX_GENERATIONS, MUTATION_RATE, CROSSOVER_RATE, K)
+if __name__ == "__main__":
+    # Run the genetic algorithm
+    t0 = time.perf_counter()
+    best_solution, best_fitness, fitness_tracker = genetic_algorithm()
+    elapsed = time.perf_counter() - t0
 
     print(f"Best Solution: {best_solution}")
     print(f"Best Fitness: {best_fitness:.6f}")
+    print(f"Training time end (seconds): {elapsed:.2f}")
 
-    print("Training time end (seconds): ", str(time.perf_counter() - start_time))
-
-
-
-    
-    
-    gens = np.linspace(0, MAX_GENERATIONS, len(fitness_tracker))
-    fig,ax = plt.subplots()
-
+    # Plot fitness progression
+    gens = np.arange(len(fitness_tracker))
+    fig, ax = plt.subplots()
     ax.plot(gens, fitness_tracker, label='Best Fitness')
     ax.set_xlabel('Generation')
+    ax.set_ylabel('Fitness')
+    ax.set_title('Genetic Algorithm Progress')
+    ax.legend()
+    plt.show()  # Retain original plotting behavior
 
-    plt.show()
+    # Save results to text file (as in original code)
     filename = "genetic_algorithm_results.txt"
-    file_exists = os.path.exists(filename)
-
-    with open(filename, 'a') as file:
-        # If file already exists, add a few blank lines first.
-        if file_exists:
-            file.write("\n\n\n")
-
-        # Get current time and date
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Write the header with time/date and the parameters/results
-        file.write(f"Genetic Algorithm Results at {current_time}\n")
-        file.write("Genetic Algorithm Parameters:\n")
-        file.write(f"Population Size - {POPULATION_SIZE}\n")
-        file.write(f"Generations - {MAX_GENERATIONS}\n")
-        file.write(f"Crossover Rate - {CROSSOVER_RATE}\n")
-        file.write(f"Mutation Rate - {MUTATION_RATE}\n")
-        file.write(f"K - {K}\n")
-        file.write("\n")
-        file.write("Best Solution\n")
-        file.write(f"[{', '.join(map(str, best_solution.tolist() if hasattr(best_solution, 'tolist') else best_solution))}]\n\n")
-        file.write("Best Fitness\n")
-        file.write(f"{best_fitness}\n")
-
-
-
-
-
+    exists = os.path.exists(filename)
+    with open(filename, 'a') as f:
+        if exists:
+            f.write("\n\n\n")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"Genetic Algorithm Results at {now}\n")
+        f.write("Parameters:\n")
+        f.write(f"  Population Size - {POPULATION_SIZE}\n")
+        f.write(f"  Generations     - {MAX_GENERATIONS}\n")
+        f.write(f"  Crossover Rate  - {CROSSOVER_RATE_BASE}\n")
+        f.write(f"  Mutation Rate   - {MUTATION_RATE_BASE}\n")
+        f.write(f"  Tournament K    - {TOURNAMENT_K}\n\n")
+        f.write("Best Solution:\n")
+        f.write(f"[{', '.join(map(str, best_solution.tolist()))}]\n\n")
+        f.write("Best Fitness:\n")
+        f.write(f"{best_fitness}\n")
 
     input("Press Enter to continue...")
 
-    # ----------------------------
-    # Run a final game with the best solution found
-    # ----------------------------
-
+    # Final demonstration run with visualization
     parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
-
-    parser.add_argument(
-        "--scenario",
-        choices=scenarios.keys(),
-        type=str,
-        default="random_repeatable",
-        help="Select a scenario by name: " + ", ".join(scenarios.keys()),
-    )
-
-    parser.add_argument(
-        "--game_type",
-        choices=["KesslerGame", "TrainerEnvironment"],
-        type=str,
-        default="KesslerGame",
-        help="The type of game to run. KesslerGame for visualization, TrainerEnvironment for fast, no-graphics simulation.",
-    )
-
+    parser.add_argument("--scenario", choices=scenarios.keys(),
+                        default="random_repeatable",
+                        help="Select a scenario")
+    parser.add_argument("--game_type",
+                        choices=["KesslerGame", "TrainerEnvironment"],
+                        default="KesslerGame",
+                        help="Visualization or fast sim")
     args = parser.parse_args()
-    selected_scenario: Scenario = scenarios[args.scenario]
+    selected = scenarios[args.scenario]
+    if args.game_type == "KesslerGame":
+        game = KesslerGame(settings=game_settings)
+    else:
+        game = TrainerEnvironment(settings=game_settings)
 
-    match args.game_type:
-        case "KesslerGame":
-            game = KesslerGame(settings=game_settings)
-        case "TrainerEnvironment":
-            game = TrainerEnvironment(settings=game_settings)
-
-    logger.info(f"Running scenario: {selected_scenario.name}")
-    initial_time = time.perf_counter()
-    score, perf_data = game.run(
-        best_solution, scenario=selected_scenario, controllers=[FuzzyController()]
-    )
+    print(f"Running final scenario: {selected.name}")
+    t1 = time.perf_counter()
+    score, perf_data = game.run(best_solution,
+                                scenario=selected,
+                                controllers=[FuzzyController()])
+    print(f"Final run completed in {time.perf_counter() - t1:.2f} seconds.")

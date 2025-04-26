@@ -128,6 +128,17 @@ def turn_angle(
     )
     angle_delta = intercept_angle - ship_heading
 
+
+    distance = math.hypot(
+        asteroid_position[0] - ship_position[0],
+        asteroid_position[1] - ship_position[1],
+    )
+
+    ratio = 8/distance
+    ratio = max(-1.0, min(1.0, ratio))
+    angle_rad = math.asin(ratio)
+    tolerance = math.degrees(angle_rad)
+
     # If the angular difference is negligible, no turn is needed.
     if math.isclose(angle_delta, 0, abs_tol=1e-6):
         return 0, True
@@ -145,14 +156,14 @@ def turn_angle(
     if 0 < angle_delta < 180:
         if angle_delta < left_threshold:
             return left_turn_rate, False
-        elif angle_delta < 1:
+        elif angle_delta < tolerance:
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False
     else:
         if angle_delta > right_threshold:
             return right_turn_rate, False
-        elif angle_delta > -1:
+        elif angle_delta > -tolerance:
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False

@@ -1,5 +1,5 @@
-from typing import TYPE_CHECKING
 
+from typing import TYPE_CHECKING, List, Tuple, Optional
 from kesslergame import KesslerController
 
 from utils import LoggerUtility
@@ -16,504 +16,397 @@ import numpy as np
 
 class FuzzyController(KesslerController):
     """
-    The main class for the fuzzy controller.
-
-    Args:
-       KesslerController (KesslerController): The base class for the controller. Provided by the kesslergame package.
+    A fuzzy-logic Asteroids controller with persistent-per-asteroid IDs.
+    Tracks which asteroids you’ve already shot by custom ID so removals
+    never desynchronize your list.
     """
 
     def __init__(self):
-        """
-        Initializes the fuzzy controller.
-        All state variables should be initialized here.
-        """
         super().__init__()
+        self._name = "BajaBlasteroids"
 
-        self._name: str = "BajaBlasteroids"
-
-        self.counter = 1
+        # --- Mode & cooldown ---
         self.mode = "Avoidance"
-
-        # Ship Variables
-
         self.switch_tracker = 0
 
-        self.asteroids_shot_at = []
+        # --- Shot-tracking by ID ---
+        self.asteroids_shot_at: list[int] = []
 
+        # --- Persistent ID machinery ---
+        self._tracked_asteroids: dict[int, tuple[float, float]] = {}
+        self._next_asteroid_id = 0
 
+        # --- Respawn timer (3s countdown) ---
+        self.respawn_time = 0.0
 
+        self.second_tracker = 0
 
-        # Bullet Variables
+        # --- Bullet speed constant ---
         self.bullet_speed = get_bullet_speed()
-    
-
-        # Threat Variables
 
     @property
     def name(self) -> str:
-        """Getter method for the name of the controller."""
         return self._name
 
-    # def control(self, observation):
-    #     # Implement your fuzzy logic here
-    #     return 0
-
     def explanation(self) -> str:
-        # Just returns the most recent message. Ideally they would call this whenever self.msg is updated
-        return self.msg
+        return getattr(self, "msg", "")
 
     def actions(
-        self, chromosome, ship_state: "ShipOwnState", game_state: "GameState"
+        self,
+        chromosome: np.ndarray | None,
+        ship_state: "ShipOwnState",
+        game_state: "GameState",
     ) -> "ActionsReturn":
-        
-
-
+        """
+        Returns (thrust, turn_angle, shoot, mine).
+        """
 
         EPS = 1e-6
         thrust = EPS
         turn_angle = EPS
-
         shoot = False
-        avoid = False
 
-        """The actions method for the fuzzy controller."""
+        asteroids = game_state["asteroids"]
+        dt = game_state["delta_time"]
 
-        # === Optimization Changes ===
-        # 1. Cache functions and time.time() locally to speed up attribute lookups in loops.
-        # 2. Precompute asteroid distances once (using math.hypot) and store them to avoid
-        #    recalculating the distance in both the thrust and turn loops.
-        # 3. Combine related asteroid data (position, velocity, original position, distance)
-        #    into one sorted list to reduce redundant computations.
-        # 4. Use enumerate and local variables in loops for faster iteration.
+        self.second_tracker += dt
 
-        # Cache frequently used functions for speed.
+        # --- If no asteroids at all, reset target list & bail ---
+        if not asteroids:
+            self.asteroids_shot_at.clear()
+            self._tracked_asteroids.clear()
+            return thrust, turn_angle, False, False
+
+        # --- Helpers & caches ---
         _hypot = math.hypot
-        _time = time.time
-        _heading_relative_angle = vm.heading_relative_angle
-        _calculate_closure_rate = vm.calculate_closure_rate
-        _tsk_inference_const = ft.tsk_inference_const
+        _calc_closure = vm.calculate_closure_rate
+        _heading_rel = vm.heading_relative_angle
+        _tsk = ft.tsk_inference_const
 
-        # Parameters from GA
+        # --- Default chromosome ---
         if chromosome is None:
-            chromosome = [0.53787625, 0.99723993, 0.19902428, 0.03418642, 0.36351966, 0.91571637, 0.20616562, 0.78851899, 0.82521183, 0.94490633, 0.68910939, 0.57782901, 0.55964537, 0.06298061, 0.57861778, 0.15696962, 0.75752471, 0.69055393, 0.13683581, 0.14908133, 0.03227711, 0.26807842, 0.1819234, 0.11462652, 0.36091408, 0.91311982, 0.8812127, 0.64816686, 0.08178917, 0.17928477, 0.77321976, 0.26073094, 0.3087934, 0.25003154, 0.13079417, 0.81211219, 0.40599938, 0.29517371, 0.20423445, 0.66618256, 0.60964984, 0.80343552, 0.78665719, 0.05603985, 0.75724246, 0.16520551, 0.99973416, 0.26534351, 0.66345241, 0.28990138, 0.07245522, 0.4446866, 0.79950513, 0.95927387, 0.68753468, 0.99037348, 0.90917958, 0.63840957, 0.62404483, 0.17560722, 0.39411994, 0.36941863, 0.47167033, 0.15362226, 0.38424885, 0.79466656, 0.70815779, 0.5989421]        # Best Chromosome from GA: [0.5 0.5 0.6 0.1 0.  0.3 1.  0.6 0.8 0.  0.4 0.4 0.9 0.4 0.8 0.2 0.9 0.4 0.6 0.4 0.  0.6 0.3 0.7 0.8 0.8 0.4 0.1 0.6 0.3 0.5 0.2 0.4]
-        # Thrust Parameters
+            chromosome = np.array([0.6043890886363625, 0.14405889474635147, 0.41911700040861277, 0.3330946988179072, 0.7242244981564369, 0.615279073097596, 0.6590868344292486, 0.8747556392322383, 0.9052282441326615, 0.42864421366934446, 0.6, 0.5799783326347909, 0.10080790351689839, 0.7833819656827667, 0.2325305271208491, 0.4094755720528236, 0.6319125514992717, 0.7902456667748936, 0.15094832217872844, 0.22145647846856353, 0.3, 0.17472415454348533, 0.9, 0.07404258112299889, 0.4324209072612234, 0.7178147078544512, 0.4858124075819883, 0.34394592969118465, 0.3646497142613049, 0.16158281804857233, 0.9, 0.8161338784999879, 0.746880918184481, 0.7209054231309774, 0.4861164025099294, 0.6993262271948468, 0.1118986766787281, 0.1, 0.2, 0.02699528514429772, 0.9815716524696491, 0.9, 0.15734736241996383, 0.025953338686782734, 0.34737599205468883, 0.012389767853096867, 0.8701689038108651, 0.6255841769087522, 0.1739546093022828, 0.318912439649935, 0.47620969477502106, 0.680047086945539, 0.6624626445409435, 0.06671960017338696, 0.8852403194231928, 0.16611177003783484, 0.583666280742435, 0.5343012900778732, 0.6421854313498417, 0.6598706025924269, 0.1822084887491896, 0.4584099607678156, 0.058014369070763294, 0.22861288584014428, 0.9282435786965958, 0.45800243592769674, 0.9062120726622436, 0.37916428144662595]
 
-        # Scalar Values
+)
+
+        # --- Unpack GA parameters into FIS setups ---
         threat_sum_scalar_1, chromosome = chromosome[0], chromosome[1:]
         thrust_sum_scalar_4, chromosome = chromosome[0], chromosome[1:]
 
-
-
-
-        # FIS 1
-        closure_centers_1, chromosome = chromosome[:1], chromosome[1:]
-        distance_centers_1, chromosome = chromosome[:1], chromosome[1:]
-
-        closure_mfs_1 = ft.build_triangles(closure_centers_1)
-        distance_mfs_1 = ft.build_triangles(distance_centers_1)
-
-        rule_constants_threat_1 = np.array(chromosome[:9]).reshape(
+        # FIS1: closure vs distance → threat
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        closure_mfs_1 = ft.build_triangles(centers)
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        distance_mfs_1 = ft.build_triangles(centers)
+        rule_const_1 = np.array(chromosome[:9]).reshape(
             len(closure_mfs_1), len(distance_mfs_1)
         )
         chromosome = chromosome[9:]
 
-
-        # FIS 2
-        relative_heading_centers_2, chromosome = chromosome[:1], chromosome[1:]
-        size_centers_2, chromosome = chromosome[:1], chromosome[1:]
-
-        relative_heading_mfs_2 = ft.build_triangles(relative_heading_centers_2)
-        size_mfs_2 = ft.build_triangles(size_centers_2)
-
-        rule_constants_threat_2 = np.array(chromosome[:9]).reshape(
+        # FIS2: rel-heading vs size → sub-threat
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        relative_heading_mfs_2 = ft.build_triangles(centers)
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        size_mfs_2 = ft.build_triangles(centers)
+        rule_const_2 = np.array(chromosome[:9]).reshape(
             len(relative_heading_mfs_2), len(size_mfs_2)
         )
         chromosome = chromosome[9:]
 
-
-        # FIS 3
-        fis_centers_1_3, chromosome = chromosome[:1], chromosome[1:]
-        fis_centers_2_3, chromosome = chromosome[:1], chromosome[1:]
-
-        threat_fis_mfs_1 = ft.build_triangles(fis_centers_1_3)
-        threat_fis_mfs_2 = ft.build_triangles(fis_centers_2_3)
-
-        rule_constants_threat_3 = np.array(chromosome[:9]).reshape(
+        # FIS3: combine FIS1 & FIS2 → final threat
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        threat_fis_mfs_1 = ft.build_triangles(centers)
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        threat_fis_mfs_2 = ft.build_triangles(centers)
+        rule_const_3 = np.array(chromosome[:9]).reshape(
             len(threat_fis_mfs_1), len(threat_fis_mfs_2)
         )
         chromosome = chromosome[9:]
 
-
-        # FIS 4
-        az_centers_4, chromosome = chromosome[:1], chromosome[1:]
-        thrust_distance_centers_4, chromosome = chromosome[:1], chromosome[1:]
-
-        az_mfs_4 = ft.build_triangles(az_centers_4)
-        thrust_distance_mfs_4 = ft.build_triangles(thrust_distance_centers_4)
-
-        rule_constants_thrust_4 = np.array(chromosome[:9]).reshape(
-            len(az_mfs_4), len(thrust_distance_mfs_4)
+        # FIS4: azimuth vs thrust-distance → thrust contrib
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        az_mfs_4 = ft.build_triangles(centers)
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        thrust_dist_mfs_4 = ft.build_triangles(centers)
+        rule_const_4 = np.array(chromosome[:9]).reshape(
+            len(az_mfs_4), len(thrust_dist_mfs_4)
         )
         chromosome = chromosome[9:]
 
-
-        # FIS 5
-        az_centers_5, chromosome = chromosome[:1], chromosome[1:]
-        distance_centers_5, chromosome = chromosome[:1], chromosome[1:]
-
-        az_mfs_5 = ft.build_triangles(az_centers_5)
-        distance_mfs_5 = ft.build_triangles(distance_centers_5)
-
-        rule_constants_thrust_5 = np.array(chromosome[:9]).reshape(
+        # FIS5: azimuth vs distance → defensive base
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        az_mfs_5 = ft.build_triangles(centers)
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        distance_mfs_5 = ft.build_triangles(centers)
+        rule_const_5 = np.array(chromosome[:9]).reshape(
             len(az_mfs_5), len(distance_mfs_5)
         )
         chromosome = chromosome[9:]
 
-
-        # FIS 6
-
-        relative_heading_centers_6, chromosome = chromosome[:1], chromosome[1:]
-        fis_centers_1_6, chromosome = chromosome[:1], chromosome[1:]
-
-        relative_heading_mfs_6 = ft.build_triangles(relative_heading_centers_6)
-        defensive_fis_mfs_1_6 = ft.build_triangles(fis_centers_1_6)
-
-        rule_constants_threat_6 = np.array(chromosome[:9]).reshape(
-            len(relative_heading_mfs_6), len(defensive_fis_mfs_1_6)
+        # FIS6: closure vs FIS5 → avoid/shoot decision
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        relative_heading_mfs_6 = ft.build_triangles(centers)
+        centers, chromosome = chromosome[:1], chromosome[1:]
+        defensive_fis_mfs_6 = ft.build_triangles(centers)
+        rule_const_6 = np.array(chromosome[:9]).reshape(
+            len(relative_heading_mfs_6), len(defensive_fis_mfs_6)
         )
         chromosome = chromosome[9:]
 
+        # --- Respawn handling ---
+        if ship_state["is_respawning"]:
+            if self.respawn_time <= 0.0:
+                self.respawn_time = 3.0
+            self.respawn_time = max(0.0, self.respawn_time - dt)
+            if self.respawn_time > 2.0:
+                return 1000.0, 0.0, False, False
+            if self.respawn_time > 1.0:
+                return 0.0, 0.0, False, False
+        else:
+            self.respawn_time = 0.0
 
+        can_shoot = ship_state["can_fire"]
 
+        # --- Build persistent IDs by matching last-frame positions ---
+        world_positions = [a["position"] for a in asteroids]
+        velocities = [a["velocity"] for a in asteroids]
 
+        new_tracked: dict[int, tuple[float, float]] = {}
+        used_old_ids = set()
 
+        for wpos, vel in zip(world_positions, velocities):
+            # predict where it was last frame
+            pred_x = wpos[0] - vel[0] * dt
+            pred_y = wpos[1] - vel[1] * dt
+            best_id = None
+            best_dist = float("inf")
 
+            # find a previous asteroid whose last pos matches
+            for aid, last_pos in self._tracked_asteroids.items():
+                if aid in used_old_ids:
+                    continue
+                d = _hypot(last_pos[0] - pred_x, last_pos[1] - pred_y)
+                if d < best_dist:
+                    best_dist = d
+                    best_id = aid
 
+            # threshold = how far it could have moved + small epsilon
+            vel_norm = _hypot(vel[0], vel[1])
+            thresh = vel_norm * dt * 1.5 + 1e-3
 
-
-
-
-
-        thrust = EPS
-
-        # Get asteroid properties from the game state.
-        asteroid_positions = [asteroid["position"] for asteroid in game_state["asteroids"]]
-        asteroid_velocities = [asteroid["velocity"] for asteroid in game_state["asteroids"]]
-        asteroid_radii = [asteroid["radius"] for asteroid in game_state["asteroids"]]
-
-
-        # Compute relative positions in the ship frame.
-        relative_positions = vm.game_to_ship_frame(
-            ship_state["position"], asteroid_positions, game_state["map_size"]
-        )
-
-        # === Optimization: Precompute distances and combine asteroid data ===
-        # Compute distances once and combine with velocities and original positions.
-        asteroid_data = [
-            (pos, vel, orig_pos, _hypot(*pos))
-            for pos, vel, orig_pos in zip(relative_positions, asteroid_velocities, asteroid_positions)
-        ]
-        # Sort asteroids by distance.
-        asteroid_data.sort(key=lambda data: data[3])
-        # Unpack the sorted data.
-        relative_positions_sorted, asteroid_velocities_sorted, asteroid_positions_sorted, distances_sorted = map(
-            list, zip(*asteroid_data)
-        )
-
-        ship_respawining = False
-        if ship_state["is_respawning"] == True:
-            ship_respawining = True
-
-
-                
-        if len(self.asteroids_shot_at) >= min(20,4+len(asteroid_positions_sorted)*0.5):
-            self.asteroids_shot_at.pop(0) 
-
-
-        # Todo: 
-        # Assign a threat value to each asteroid (FIS)
-        # Determine which mode to operate in (threat avoidance or threat shooting) (FIS)
-        # Create threat avoidance fis and determine to shoot or run (FIS)
-        # Create threat shooting fis (FIS)
-        # Mine or not (FIS)
-
-
-
-        # Assign Asteroids Threat Values
-        threat_array = []
-        proximity_threat = 0
-        for i, pos in enumerate(relative_positions_sorted):
- 
-            asteroid_distance = distances_sorted[i]  # Use precomputed distance
-            distance_norm = min(50 / (asteroid_distance + EPS), 0.99999)
-
-
-            closure_rate = _calculate_closure_rate(
-                ship_state["position"],  # Ship position
-                ship_state["heading"],  # Ship heading
-                ship_state["speed"],  # Ship speed
-                pos,  # Asteroid position
-                asteroid_velocities_sorted[i],  # Asteroid velocity
-            )
-            closure_rate = min(max((closure_rate+200)/400, 0), 1)
-            # Avoid division by zero edge cases.
-            
-
-            relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
-
-            # Avoid division by zero edge cases.
-            if relative_heading == 0 or relative_heading == 1:
-                relative_heading = 0.99999
-
-            size = asteroid_radii[i] / 4  # Normalize size to a range of 0-1
-
-            threat_fis_1_output = _tsk_inference_const(
-                closure_rate,
-                distance_norm,
-                closure_mfs_1,
-                distance_mfs_1,
-                rule_constants_threat_1,
-            )
-
-            threat_fis_2_output = _tsk_inference_const(
-                relative_heading,
-                size,
-                relative_heading_mfs_2,
-                size_mfs_2,
-                rule_constants_threat_2,
-            )   
-            
-            asteroid_threat = _tsk_inference_const(
-                threat_fis_1_output,
-                threat_fis_2_output,
-                threat_fis_mfs_1,
-                threat_fis_mfs_2,
-                rule_constants_threat_3,
-            )
-
-
-            # Append the threat value to the list.
-            threat_array.append(asteroid_threat)
-
-            if asteroid_distance < 400:
-                proximity_threat += asteroid_threat
-
-
-
-        # Determine which mode to operate in (threat avoidance or threat shooting)    
-        
-        previous_mode = self.mode
-
-
-        if self.switch_tracker == 0:
-            if ship_respawining == True or proximity_threat > 20 * threat_sum_scalar_1:
-                self.mode = "Defensive"
-                self.switch_tracker = 30
+            if best_id is not None and best_dist <= thresh:
+                aid = best_id
             else:
-                self.mode = "Offensive"
-                self.switch_tracker = 30
-        else: 
-            self.switch_tracker -= 1
+                aid = self._next_asteroid_id
+                self._next_asteroid_id += 1
 
+            new_tracked[aid] = wpos
+            used_old_ids.add(aid)
 
+        # swap in the new mapping
+        self._tracked_asteroids = new_tracked
 
+        # --- Combine into list and sort by distance in ship frame ---
+        rel_positions = vm.game_to_ship_frame(
+            ship_state["position"], world_positions, game_state["map_size"]
+        )
+        ast_data = [
+            (aid, rpos, vel, wpos, _hypot(rpos[0], rpos[1]))
+            for (aid, rpos, vel, wpos) in zip(
+                new_tracked.keys(),
+                rel_positions,
+                velocities,
+                world_positions,
+            )
+        ]
+        ast_data.sort(key=lambda x: x[4])  # sort by dist
 
+        # unpack
+        (ids_sorted,
+         rel_sorted,
+         vel_sorted,
+         world_sorted,
+         dist_sorted) = map(list, zip(*ast_data))
 
+        # --- Compute threat values ---
+        threat_array: list[float] = []
+        proximity_threat = 0.0
 
-        # if self.mode != previous_mode:
-        #     print(f"Mode changed to: {self.mode}")
-        # if self.mode != previous_mode:
-        #     print(f"Mode changed to: {self.mode}")
-
-        # Offensive Mode
-        if self.mode == "Offensive":
-
-            shot_set = set(self.asteroids_shot_at)
-
-            # get all indices, sorted by threat strength (descending)
-            sorted_idxs = np.argsort(threat_array)[::-1]
-
-            # scan until you find one not yet shot
-            threat_index = -1
-            for idx in sorted_idxs:
-                if idx not in shot_set:
-                    threat_index = idx
-                    self.asteroids_shot_at.append(threat_index)
-                    break
-            
-            # Calculate turn angle using the most threatening asteroid.
-            turn_angle, on_target = vm.turn_angle(
+        for i, rpos in enumerate(rel_sorted):
+            d = dist_sorted[i]
+            d_norm = min(50.0 / (d + EPS), 0.99999)
+            closure = _calc_closure(
                 ship_state["position"],
                 ship_state["heading"],
-                ship_state["turn_rate_range"],
-                self.bullet_speed,
-                asteroid_positions_sorted[threat_index],
-                asteroid_velocities_sorted[threat_index],
-                game_state["delta_time"],
+                ship_state["speed"],
+                rpos,
+                vel_sorted[i],
             )
+            closure = min(max((closure + 200.0) / 400.0, 0.0), 1.0)
+            size_n = asteroids[i]["radius"] / 4.0
+            rh = _heading_rel([0, 0], ship_state["heading"], rpos) / 360.0
+            if rh in (0.0, 1.0):
+                rh = 0.99999
 
-            # Determine if we should shoot.
-            if on_target:
-                self.asteroids_shot_at.append(threat_index)
-                shoot = True
+            out1 = _tsk(closure, d_norm,
+                        closure_mfs_1, distance_mfs_1, rule_const_1)
+            out2 = _tsk(rh, size_n,
+                        relative_heading_mfs_2, size_mfs_2, rule_const_2)
+            thr = _tsk(out1, out2,
+                       threat_fis_mfs_1, threat_fis_mfs_2, rule_const_3)
+
+            threat_array.append(thr)
+            if d < 400.0:
+                proximity_threat += thr
+
+        valid_count = len(threat_array)
+
+        # --- Prune shot list: remove dead IDs, cap oldest off ---
+        self.asteroids_shot_at = [
+            aid for aid in self.asteroids_shot_at if aid in ids_sorted
+        ]
 
 
-            # === Build Thrust FIS ===
 
+        if len(rel_sorted) == 1 and self.second_tracker%1 < dt:
+            self.asteroids_shot_at.clear()
 
-            for i, pos in enumerate(relative_positions_sorted):
-                asteroid_distance = distances_sorted[i]  # Use precomputed distance
-                # Skip asteroids that are too far.
-                if asteroid_distance > 300:
+        max_keep = min(20, 4 + valid_count // 2)
+        while len(self.asteroids_shot_at) > max_keep:
+            self.asteroids_shot_at.pop(0)
+
+        # --- Mode switch with cooldown ---
+        if self.switch_tracker <= 0:
+            self.mode = (
+                "Defensive"
+                if proximity_threat > 20.0 * threat_sum_scalar_1
+                else "Offensive"
+            )
+            self.switch_tracker = 30
+        else:
+            self.switch_tracker -= 1
+
+        # --- OFFENSIVE mode: aim & shoot + thrust-away ---
+        if self.mode == "Offensive" and valid_count > 0:
+            # choose highest-threat not-yet-shot ID
+            shot_set = set(self.asteroids_shot_at)
+            for aid, thr in sorted(
+                zip(ids_sorted, threat_array),
+                key=lambda x: x[1], reverse=True
+            ):
+                if aid not in shot_set:
+                    target_id = aid
                     break
-
-                # Calculate relative heading and normalize.
-                relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
-                # Avoid division by zero edge cases.
-                if relative_heading == 0 or relative_heading == 1:
-                    relative_heading = 0.99999
-
-                # Normalize distance.
-                distance_norm = min(50 / (asteroid_distance + 0.0001), 0.99999)
-
-                # Compute thrust contribution from this asteroid.
-                thrust_sum = _tsk_inference_const(
-                    relative_heading,
-                    distance_norm,
-                    az_mfs_4,
-                    thrust_distance_mfs_4,
-                    rule_constants_thrust_4,
-                ) - 0.5
-
-                thrust += thrust_sum
-
-            thrust = thrust * 200 * thrust_sum_scalar_4
-
-
-        if self.mode == "Defensive":
-            # Defensive Mode
-            
-            for i, pos in enumerate(relative_positions_sorted):
-                asteroid_distance = distances_sorted[i]
-
-                # Skip asteroids that are too far.
-                if asteroid_distance > 400:
-                    break
-            
-                # Normalize Distance
-                distance_norm = min(50 / (asteroid_distance + EPS), 0.99999)
-
-                # Calculate closure rate.
-                closure_rate = _calculate_closure_rate(
-                    ship_state["position"],
-                    ship_state["heading"],
-                    ship_state["speed"],
-                    pos,
-                    asteroid_velocities_sorted[i],
-                )
-                closure_rate = min(max((closure_rate+200)/400, 0), 1)
-
-                # Calculate relative heading and normalize.
-                relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
-                # Avoid division by zero edge cases.
-                if relative_heading == 0 or relative_heading == 1:
-                    relative_heading = 0.99999
-
-                # Decide to shoot or run
-
-                defensive_fis_output_1 = _tsk_inference_const(
-                    closure_rate,
-                    distance_norm,
-                    az_mfs_5,
-                    distance_mfs_5,
-                    rule_constants_thrust_5,
-                )
-
-                defensive_fis_output_2 = _tsk_inference_const(
-                    relative_heading,
-                    defensive_fis_output_1,
-                    relative_heading_mfs_6,
-                    defensive_fis_mfs_1_6,
-                    rule_constants_threat_6,
-                )
-
-                # Decide to use avoid mode or shooting mode
-                if defensive_fis_output_2 > 0.5:
-                    avoid = True
-                else:
-                    avoid = False
-            
-
-            if avoid == True:
-
-                heading_array = []
-                for i, pos in enumerate(relative_positions_sorted):
-
-                    relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
-                    heading_array.append(relative_heading)
-
-                aim_point = vm.largest_gap_center(heading_array)
-                turn_angle, on_target = vm.go_to_angle(
-                ship_state["heading"],
-                ship_state["turn_rate_range"],
-                aim_point,
-                game_state["delta_time"],
-                )
-
-                on_target = False
-
             else:
-                threat_index = np.argmax(threat_array)
-                
-                # Calculate turn angle using the most threatening asteroid.
-                turn_angle, on_target = vm.turn_angle(
+                target_id = None
+
+            if target_id is not None:
+                idx = ids_sorted.index(target_id)
+                ta, on_target = vm.turn_angle(
                     ship_state["position"],
                     ship_state["heading"],
                     ship_state["turn_rate_range"],
                     self.bullet_speed,
-                    asteroid_positions_sorted[threat_index],
-                    asteroid_velocities_sorted[threat_index],
-                    game_state["delta_time"],
+                    world_sorted[idx],
+                    vel_sorted[idx],
+                    dt,
                 )
-
-                # Determine if we should shoot.
-                if on_target:
+                turn_angle = ta
+                if on_target and can_shoot:
                     shoot = True
+                    self.asteroids_shot_at.append(target_id)
 
+            # thrust away from any close ones
+            for i, rpos in enumerate(rel_sorted):
+                if dist_sorted[i] > 300.0:
+                    break
+                rh = _heading_rel([0, 0], ship_state["heading"], rpos) / 360.0
+                if rh in (0.0, 1.0):
+                    rh = 0.99999
+                dn = min(50.0 / (dist_sorted[i] + EPS), 0.99999)
+                thrust += (
+                    _tsk(rh, dn, az_mfs_4, thrust_dist_mfs_4, rule_const_4)
+                    - 0.5
+                )
+            thrust *= 200.0 * thrust_sum_scalar_4
 
-                # === Build Thrust FIS ===
+        # --- DEFENSIVE mode: avoid or fallback to shooting ---
+        elif self.mode == "Defensive" and valid_count > 0:
+            avoid_scores = []
+            for i, rpos in enumerate(rel_sorted):
+                if dist_sorted[i] > 400.0:
+                    break
+                dn = min(50.0 / (dist_sorted[i] + EPS), 0.99999)
+                closure = _calc_closure(
+                    ship_state["position"],
+                    ship_state["heading"],
+                    ship_state["speed"],
+                    rpos,
+                    vel_sorted[i],
+                )
+                closure = min(max((closure + 200.0) / 400.0, 0.0), 1.0)
+                rh = _heading_rel([0, 0], ship_state["heading"], rpos) / 360.0
+                if rh in (0.0, 1.0):
+                    rh = 0.99999
 
+                d1 = _tsk(closure, dn, az_mfs_5, distance_mfs_5, rule_const_5)
+                d2 = _tsk(rh, d1, relative_heading_mfs_6, defensive_fis_mfs_6, rule_const_6)
+                avoid_scores.append(d2)
 
-                for i, pos in enumerate(relative_positions_sorted):
-                    asteroid_distance = distances_sorted[i]  # Use precomputed distance
-                    # Skip asteroids that are too far.
-                    if asteroid_distance > 300:
+            if avoid_scores and max(avoid_scores) > 0.5:
+                gap = vm.largest_gap_center([
+                    _heading_rel([0, 0], ship_state["heading"], r) / 360.0
+                    for r in rel_sorted
+                ])
+                ta, _ = vm.go_to_angle(
+                    ship_state["heading"],
+                    ship_state["turn_rate_range"],
+                    gap,
+                    dt,
+                )
+                turn_angle = ta
+
+            else:
+                # fallback to Offensive shooting logic
+                shot_set = set(self.asteroids_shot_at)
+                for aid, thr in sorted(
+                    zip(ids_sorted, threat_array),
+                    key=lambda x: x[1], reverse=True
+                ):
+                    if aid not in shot_set:
+                        target_id = aid
                         break
+                else:
+                    target_id = None
 
-                    # Calculate relative heading and normalize.
-                    relative_heading = _heading_relative_angle([0, 0], ship_state["heading"], pos) / 360
-                    # Avoid division by zero edge cases.
-                    if relative_heading == 0 or relative_heading == 1:
-                        relative_heading = 0.99999
+                if target_id is not None:
+                    idx = ids_sorted.index(target_id)
+                    ta, on_target = vm.turn_angle(
+                        ship_state["position"],
+                        ship_state["heading"],
+                        ship_state["turn_rate_range"],
+                        self.bullet_speed,
+                        world_sorted[idx],
+                        vel_sorted[idx],
+                        dt,
+                    )
+                    turn_angle = ta
+                    if on_target and can_shoot:
+                        shoot = True
+                        self.asteroids_shot_at.append(target_id)
 
-                    # Normalize distance.
-                    distance_norm = min(50 / (asteroid_distance + 0.0001), 0.99999)
+                # same thrust-away as Offensive
+                for i, rpos in enumerate(rel_sorted):
+                    if dist_sorted[i] > 300.0:
+                        break
+                    rh = _heading_rel([0, 0], ship_state["heading"], rpos) / 360.0
+                    if rh in (0.0, 1.0):
+                        rh = 0.99999
+                    dn = min(50.0 / (dist_sorted[i] + EPS), 0.99999)
+                    thrust += (
+                        _tsk(rh, dn, az_mfs_4, thrust_dist_mfs_4, rule_const_4)
+                        - 0.5
+                    )
+                thrust *= 200.0 * thrust_sum_scalar_4
 
-                    # Compute thrust contribution from this asteroid.
-                    thrust_sum = _tsk_inference_const(
-                        relative_heading,
-                        distance_norm,
-                        az_mfs_4,
-                        thrust_distance_mfs_4,
-                        rule_constants_thrust_4,
-                    ) - 0.5
-
-                    thrust += thrust_sum
-
-                thrust = thrust * 200 * thrust_sum_scalar_4
-
-
-        
-        
-        print(self.mode)
         return thrust, turn_angle, shoot, False
