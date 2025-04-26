@@ -36,7 +36,7 @@ class FuzzyController(KesslerController):
 
         # Ship Variables
 
-        
+        self.switch_tracker = 0
 
         self.asteroids_shot_at = []
 
@@ -72,10 +72,10 @@ class FuzzyController(KesslerController):
         EPS = 1e-6
         thrust = EPS
         turn_angle = EPS
+
         shoot = False
         avoid = False
-        if len(self.asteroids_shot_at) >= 20:
-            self.asteroids_shot_at.pop(0) 
+
         """The actions method for the fuzzy controller."""
 
         # === Optimization Changes ===
@@ -95,8 +95,7 @@ class FuzzyController(KesslerController):
 
         # Parameters from GA
         if chromosome is None:
-            chromosome = [0.85523172, 0.6853809, 0.99123998, 0.91451783, 0.53872943, 0.35664217, 0.25674431, 0.08803115, 0.18758472, 0.96246244, 0.1916734, 0.96833484, 0.02628331, 0.57785765, 0.1196252, 0.63225362, 0.46882679, 0.71777299, 0.82152798, 0.59765353, 0.15332517, 0.22691668, 0.67164351, 0.51825907, 0.60413527, 0.36230559, 0.13900076, 0.11432595, 0.71273771, 0.6605982, 0.45888102, 0.28467731, 0.86633552, 0.20717115, 0.49676342, 0.56947511, 0.33032694, 0.7745347, 0.38238305, 0.26854836, 0.70754135, 0.39565687, 0.67469258, 0.23880572, 0.37223091, 0.57504392, 0.73465904, 0.09994881, 0.27618423, 0.88286071, 0.28346158, 0.21135125, 0.19127665, 0.75932432, 0.08345862, 0.58844292, 0.36830784, 0.3586154, 0.31159994, 0.53552311, 0.29707806, 0.8697389, 0.24947505, 0.03634646, 0.75150587, 0.39691107, 0.41059989, 0.93108836]
-        # Best Chromosome from GA: [0.5 0.5 0.6 0.1 0.  0.3 1.  0.6 0.8 0.  0.4 0.4 0.9 0.4 0.8 0.2 0.9 0.4 0.6 0.4 0.  0.6 0.3 0.7 0.8 0.8 0.4 0.1 0.6 0.3 0.5 0.2 0.4]
+            chromosome = [0.53787625, 0.99723993, 0.19902428, 0.03418642, 0.36351966, 0.91571637, 0.20616562, 0.78851899, 0.82521183, 0.94490633, 0.68910939, 0.57782901, 0.55964537, 0.06298061, 0.57861778, 0.15696962, 0.75752471, 0.69055393, 0.13683581, 0.14908133, 0.03227711, 0.26807842, 0.1819234, 0.11462652, 0.36091408, 0.91311982, 0.8812127, 0.64816686, 0.08178917, 0.17928477, 0.77321976, 0.26073094, 0.3087934, 0.25003154, 0.13079417, 0.81211219, 0.40599938, 0.29517371, 0.20423445, 0.66618256, 0.60964984, 0.80343552, 0.78665719, 0.05603985, 0.75724246, 0.16520551, 0.99973416, 0.26534351, 0.66345241, 0.28990138, 0.07245522, 0.4446866, 0.79950513, 0.95927387, 0.68753468, 0.99037348, 0.90917958, 0.63840957, 0.62404483, 0.17560722, 0.39411994, 0.36941863, 0.47167033, 0.15362226, 0.38424885, 0.79466656, 0.70815779, 0.5989421]        # Best Chromosome from GA: [0.5 0.5 0.6 0.1 0.  0.3 1.  0.6 0.8 0.  0.4 0.4 0.9 0.4 0.8 0.2 0.9 0.4 0.6 0.4 0.  0.6 0.3 0.7 0.8 0.8 0.4 0.1 0.6 0.3 0.5 0.2 0.4]
         # Thrust Parameters
 
         # Scalar Values
@@ -226,7 +225,9 @@ class FuzzyController(KesslerController):
             ship_respawining = True
 
 
-
+                
+        if len(self.asteroids_shot_at) >= min(20,4+len(asteroid_positions_sorted)*0.5):
+            self.asteroids_shot_at.pop(0) 
 
 
         # Todo: 
@@ -303,14 +304,26 @@ class FuzzyController(KesslerController):
         
         previous_mode = self.mode
 
-        if ship_respawining == True or proximity_threat > 20 * threat_sum_scalar_1:
-            self.mode = "Defensive"
-        else:
-            self.mode = "Offensive"
+
+        if self.switch_tracker == 0:
+            if ship_respawining == True or proximity_threat > 20 * threat_sum_scalar_1:
+                self.mode = "Defensive"
+                self.switch_tracker = 30
+            else:
+                self.mode = "Offensive"
+                self.switch_tracker = 30
+        else: 
+            self.switch_tracker -= 1
+
+
+
+
+
 
         # if self.mode != previous_mode:
         #     print(f"Mode changed to: {self.mode}")
-
+        # if self.mode != previous_mode:
+        #     print(f"Mode changed to: {self.mode}")
 
         # Offensive Mode
         if self.mode == "Offensive":
@@ -500,5 +513,7 @@ class FuzzyController(KesslerController):
                 thrust = thrust * 200 * thrust_sum_scalar_4
 
 
-            
+        
+        
+        print(self.mode)
         return thrust, turn_angle, shoot, False

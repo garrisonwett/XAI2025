@@ -158,7 +158,7 @@ def genetic_algorithm(CHROMOSOME_SIZE=80,POPULATION_SIZE=2, MAX_GENERATIONS=200,
         mutation_rate = MUTATION_RATE - 0.9*(MUTATION_RATE * (generation / MAX_GENERATIONS))  # Decay mutation rate over generations
         crossover_rate = CROSSOVER_RATE + (CROSSOVER_INCREASE - CROSSOVER_RATE) * (generation / MAX_GENERATIONS)  # Increase crossover rate over generations
 
-        with multiprocessing.Pool(processes=4) as pool:
+        with multiprocessing.Pool(processes=6) as pool:
             fitnesses = pool.map(fitness_function, population)
             
         # Track the best in the current generation
@@ -258,7 +258,7 @@ def fitness_function(chromosome):
         based on game performance.
     """
     fitness_sum = 0
-    scenario_array = ["training1", "training2", "training3", "random_repeatable"]
+    scenario_array = ["training1", "training2", "training3"]
 
     for i in range(len(scenario_array)):
         parser = argparse.ArgumentParser(description="Kessler Game Scenario Runner")
@@ -323,8 +323,8 @@ if __name__ == '__main__':
     purpose = "Changed to use any float instead of 0, 0.1, 0.2, ... 0.9"
 
     CHROMOSOME_SIZE = 68  # Number of genes in each individual
-    POPULATION_SIZE = 100
-    MAX_GENERATIONS = 1000
+    POPULATION_SIZE = 5
+    MAX_GENERATIONS = 5
     MUTATION_RATE   = 0.3
     CROSSOVER_RATE  = 0.5
     CROSSOVER_INCREASE = 0.9 
