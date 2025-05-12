@@ -43,13 +43,13 @@ game_settings = {
 # 1. Hyperparameters
 # ----------------------------
 CHROMOSOME_SIZE     = 68      # Number of genes per individual
-POPULATION_SIZE     = 40      # How many individuals in each generation
+POPULATION_SIZE     = 20      # How many individuals in each generation
 MAX_GENERATIONS     = 100      # Maximum number of GA iterations
 MUTATION_RATE_BASE  = 0.3     # Starting mutation probability per gene
 CROSSOVER_RATE_BASE = 0.4     # Starting crossover probability per mating
 CROSSOVER_INCREASE  = 0.9     # Final (max) crossover probability
 TOURNAMENT_K        = 3       # Tournament size for parent selection
-POOL_PROCESSES      = 6       # Number of worker processes for fitness eval
+POOL_PROCESSES      = 8       # Number of worker processes for fitness eval
 
 # ----------------------------
 # 2. Prepare simulators once
@@ -94,7 +94,7 @@ def fitness_function(chromosome):
             controllers=[FuzzyController()]
         )
         team = score.teams[0]
-        total += team.asteroids_hit - 10 * (team.deaths)
+        total += team.asteroids_hit - 10 * (team.deaths**2)
     return total
 
 
@@ -133,17 +133,26 @@ def crossover(parent1, parent2, rate):
     return child1, child2
 
 
-def mutate(parent, rate):
+def mutate(parent: np.ndarray, rate: float, distance: float) -> np.ndarray:
     """
-    Perform per-gene mutation with probability `rate`.
-    
-    Uses a vectorized NumPy approach to avoid Python loops:
-    - Builds a boolean mask of which genes to mutate.
-    - Generates new random values for those genes only.
+    Perform per-gene mutation with probability `rate`, where each mutation 
+    shifts the gene by at most `distance` but always stays within [0,1].
     """
+    # 1) decide which genes to mutate
     mask = np.random.rand(parent.size) < rate
-    new_genes = np.random.rand(parent.size)
-    return np.where(mask, new_genes, parent)
+
+    # 2) for each gene, compute its allowable noise interval [low, high]
+    #    so that parent[i] + noise remains in [0,1]
+    low  = np.maximum(-distance,      -parent)
+    high = np.minimum( distance, 1.0 - parent)
+
+    # 3) sample noise uniformly in [low, high] for every gene
+    u = np.random.rand(parent.size)
+    noise = low + u * (high - low)
+
+    # 4) apply noise only where mask is True
+    mutated = parent + noise
+    return np.where(mask, mutated, parent)
 
 # ----------------------------
 # 4. Main GA loop
@@ -215,13 +224,16 @@ def genetic_algorithm():
             print(f"Boosted mutation rate to {mutation_rate:.4f}")
 
         # 8) Create the rest of the new population
+
+        distance = (1-generation)/MAX_GENERATIONS
+
         while len(new_population) < POPULATION_SIZE:
             p1 = tournament_selection(population, fitnesses, TOURNAMENT_K)
             p2 = tournament_selection(population, fitnesses, TOURNAMENT_K)
             c1, c2 = crossover(p1, p2, crossover_rate)
-            new_population.append(mutate(c1, mutation_rate))
+            new_population.append(mutate(c1, mutation_rate, distance))
             if len(new_population) < POPULATION_SIZE:
-                new_population.append(mutate(c2, mutation_rate))
+                new_population.append(mutate(c2, mutation_rate, distance))
 
         population = new_population[:POPULATION_SIZE]
         last_fitness = current_best_fit
