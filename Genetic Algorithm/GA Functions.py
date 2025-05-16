@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from fuzzy_controller import FuzzyController
+from TeamTempNameSubmission.fuzzy_controller import FuzzyController
 from scenarios import scenarios
 from utils import LoggerUtility, LoggingLevel
 
@@ -44,17 +44,18 @@ game_settings = {
 # ----------------------------
 CHROMOSOME_SIZE     = 68      # Number of genes per individual
 POPULATION_SIZE     = 20      # How many individuals in each generation
-MAX_GENERATIONS     = 100      # Maximum number of GA iterations
-MUTATION_RATE_BASE  = 0.3     # Starting mutation probability per gene
-CROSSOVER_RATE_BASE = 0.4     # Starting crossover probability per mating
+MAX_GENERATIONS     = 3000      # Maximum number of GA iterations
+MUTATION_RATE_BASE  = 0.5     # Starting mutation probability per gene
+CROSSOVER_RATE_BASE = 0.8     # Starting crossover probability per mating
 CROSSOVER_INCREASE  = 0.9     # Final (max) crossover probability
 TOURNAMENT_K        = 3       # Tournament size for parent selection
 POOL_PROCESSES      = 8       # Number of worker processes for fitness eval
+STOP_HOURS = 2  # maximum hours to run the GA
 
 # ----------------------------
 # 2. Prepare simulators once
 # ----------------------------
-scenario_names = ["training1", "training2", "training3"]
+scenario_names = ["training1","training2", "training3"]
 # Use fast TrainerEnvironment for fitness; only KesslerGame for final demo
 games = {
     name: TrainerEnvironment(settings=game_settings)
@@ -159,16 +160,8 @@ def mutate(parent: np.ndarray, rate: float, distance: float) -> np.ndarray:
 # ----------------------------
 def genetic_algorithm():
     """
-    Runs the GA with:
-      - dynamic mutation/crossover rates (linear decay/increase)
-      - elitism (carry forward the best individual)
-      - stagnation-based mutation boost (if no improvement for 20 gens)
-      - parallel fitness evaluation via a persistent multiprocessing.Pool
-    
-    Returns:
-        best_solution_ever: numpy array of the top chromosome found
-        best_fitness_ever:  fitness score of that chromosome
-        fitness_tracker:   list of best_fitness_ever per generation
+    Runs the GA with dynamic rates, elitism, stagnation boost,
+    parallel fitness evaluation, and a time-based stop criterion.
     """
     # 1) Initialize population
     population = [create_random_individual(CHROMOSOME_SIZE)
@@ -179,54 +172,64 @@ def genetic_algorithm():
     fitness_age = 0
     fitness_tracker = []
 
-    # 2) Keep pool alive throughout all generations
+    # 2) Keep track of start time
+    ga_start_time = time.perf_counter()
+
+    # 3) Keep pool alive throughout all generations
     pool = multiprocessing.Pool(POOL_PROCESSES)
     for generation in range(MAX_GENERATIONS):
+        # Check overall time limit
+        elapsed_hours = (time.perf_counter() - ga_start_time) / 3600.0
+        if elapsed_hours >= STOP_HOURS:
+            print(f"Reached time limit of {STOP_HOURS} hours. Stopping GA at generation {generation}.")
+            break
+
         gen_start = time.perf_counter()
 
-        # 3) Update dynamic rates
-        #    - mutation decays linearly from base → 0
-        #    - crossover ramps linearly from base → CROSSOVER_INCREASE
+        # 4) Update dynamic rates
         mutation_rate = MUTATION_RATE_BASE * (1 - generation / MAX_GENERATIONS)
-        crossover_rate = CROSSOVER_RATE_BASE + \
-                         (CROSSOVER_INCREASE - CROSSOVER_RATE_BASE) * \
-                         (generation / MAX_GENERATIONS)
+        crossover_rate = (CROSSOVER_RATE_BASE +
+                          (CROSSOVER_INCREASE - CROSSOVER_RATE_BASE) *
+                          (generation / 300))
+        
+        crossover_rate = min(crossover_rate, CROSSOVER_INCREASE)
 
-        # 4) Evaluate fitnesses in parallel
+
+        if fitness_age >= 20:
+            boosted = MUTATION_RATE_BASE + (1 - MUTATION_RATE_BASE) * (fitness_age / 100)
+            mutation_rate = min(boosted, 0.7)
+            print(f"Boosted mutation rate to {mutation_rate:.4f}")
+        
+        print(f"Mutation rate: {mutation_rate:.4f}, "
+              f"Crossover rate: {crossover_rate:.4f}")
+    
+        # 5) Evaluate fitnesses in parallel
         fitnesses = pool.map(fitness_function, population)
 
-        # 5) Track best solution
+        # 6) Track best solution
         current_best_fit = max(fitnesses)
         current_best_ind = population[fitnesses.index(current_best_fit)]
         if current_best_fit > best_fitness_ever:
             best_fitness_ever = current_best_fit
             best_solution_ever = current_best_ind.copy()
 
-        # 6) Original logging for transparency
-        print(f"Generation {generation}, "
-              f"Best Fitness this generation {current_best_fit:.6f}, "
+        # 7) Logging
+        print(f"Generation {generation}, Best Fitness this generation {current_best_fit:.6f}, "
               f"Best Fitness so far: {best_fitness_ever:.6f}")
-        print(f"Current Best Individual: {best_solution_ever}")
 
         fitness_tracker.append(best_fitness_ever)
 
-        # 7) Elitism & stagnation boost
+        # 8) Elitism & stagnation boost
         new_population = [current_best_ind.copy()]
         if current_best_fit == last_fitness:
             fitness_age += 1
         else:
             fitness_age = 0
 
-        if fitness_age >= 20:
-            # Increase mutation to escape platesaus
-            boosted = MUTATION_RATE_BASE + (1 - MUTATION_RATE_BASE) * (fitness_age / 100)
-            mutation_rate = min(boosted, 0.7)
-            print(f"Boosted mutation rate to {mutation_rate:.4f}")
 
-        # 8) Create the rest of the new population
 
-        distance = (1-generation)/MAX_GENERATIONS
-
+        # 9) Generate next population
+        distance = (1 - generation) / MAX_GENERATIONS
         while len(new_population) < POPULATION_SIZE:
             p1 = tournament_selection(population, fitnesses, TOURNAMENT_K)
             p2 = tournament_selection(population, fitnesses, TOURNAMENT_K)
@@ -241,9 +244,15 @@ def genetic_algorithm():
         print(f"Generation {generation} completed in "
               f"{time.perf_counter() - gen_start:.2f} seconds.\n")
 
+        print(f"Current best fitness: {best_fitness_ever:.6f}")
+        print(f"Current best solution: {best_solution_ever}")
+
     pool.close()
     pool.join()
+
+
     return best_solution_ever, best_fitness_ever, fitness_tracker
+
 
 # ----------------------------
 # 5. Run GA, plot, save, final demo

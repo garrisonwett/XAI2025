@@ -7,7 +7,7 @@ from kesslergame import GraphicsType, KesslerGame, Scenario, TrainerEnvironment
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from fuzzy_controller import FuzzyController
+from TeamTempNameSubmission.fuzzy_controller import FuzzyController
 from scenarios import scenarios
 from utils import LoggerUtility, LoggingLevel
 
@@ -42,7 +42,7 @@ if __name__ == "__main__":
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="training3",
+        default="training2",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
 
@@ -67,9 +67,8 @@ if __name__ == "__main__":
     logger.info(f"Running scenario: {selected_scenario.name}")
     initial_time = time.perf_counter()
 
-    chromosome = None
     score, perf_data = game.run(
-        chromosome, scenario=selected_scenario, controllers=[FuzzyController()]
+        scenario=selected_scenario, controllers=[FuzzyController()]
     )
 
     print("Total scenario eval time: ", str(time.perf_counter() - initial_time))

@@ -7,7 +7,7 @@ from kesslergame import GraphicsType, KesslerGame, Scenario, TrainerEnvironment
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from fuzzy_controller import FuzzyController
+from TeamTempNameSubmission.fuzzy_controller import FuzzyController
 from scenarios import scenarios
 from utils import LoggerUtility, LoggingLevel
 

@@ -4,8 +4,8 @@ from kesslergame import KesslerController
 
 from utils import LoggerUtility
 from utils.kessler_helpers import get_bullet_speed
-from utils.math import vector_math as vm
-from fuzzy_logic import fuzzy_trees as ft
+from TeamTempNameSubmission import vector_math as vm
+from TeamTempNameSubmission import fuzzy_trees as ft
 if TYPE_CHECKING:
     from utils.types import ActionsReturn, GameState, ShipOwnState
 import time

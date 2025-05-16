@@ -429,3 +429,19 @@ def go_to_angle(
             return angle_delta / delta_time, True
         else:
             return angle_delta / delta_time, False
+        
+
+def speed_to_thrust(current_speed: float, target_speed: float) -> float:
+    """
+    Calculate the thrust needed to reach a target speed.
+
+    Args:
+        current_speed (float): The current speed of the ship.
+        target_speed (float): The desired target speed.
+
+    Returns:
+        float: The thrust needed to reach the target speed.
+    """
+    thrust = min(max(30 * (target_speed - current_speed), -500), 500)
+
+    return thrust
