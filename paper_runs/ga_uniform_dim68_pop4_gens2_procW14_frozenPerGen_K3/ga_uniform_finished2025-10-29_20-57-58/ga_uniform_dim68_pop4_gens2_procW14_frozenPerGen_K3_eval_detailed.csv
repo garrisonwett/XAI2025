@@ -1,0 +1,4 @@
+seed,episode,scenario,sec,error,total_score,accuracy,hits,deaths,mean_eval_time
+0,0,training2,18.66524648666382,,,1.0,155.0,3.0,0.0
+0,1,training2,16.616215229034424,,,1.0,155.0,3.0,0.0
+0,2,training2,14.402246952056885,,,1.0,155.0,3.0,0.0

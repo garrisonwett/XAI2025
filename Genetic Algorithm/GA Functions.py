@@ -49,7 +49,7 @@ MUTATION_RATE_BASE  = 0.5     # Starting mutation probability per gene
 CROSSOVER_RATE_BASE = 0.8     # Starting crossover probability per mating
 CROSSOVER_INCREASE  = 0.9     # Final (max) crossover probability
 TOURNAMENT_K        = 3       # Tournament size for parent selection
-POOL_PROCESSES      = 8       # Number of worker processes for fitness eval
+POOL_PROCESSES      = 16       # Number of worker processes for fitness eval
 STOP_HOURS = 2  # maximum hours to run the GA
 
 # ----------------------------

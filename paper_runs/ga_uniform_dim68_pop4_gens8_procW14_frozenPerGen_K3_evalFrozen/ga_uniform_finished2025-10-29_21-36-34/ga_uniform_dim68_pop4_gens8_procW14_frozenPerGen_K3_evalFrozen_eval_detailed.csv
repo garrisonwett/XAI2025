@@ -1,0 +1,10 @@
+seed,episode,scenario,sec,error,total_score,accuracy,hits,deaths,mean_eval_time
+0,0,random_repeatable_frozen_g555_m0,4.46992826461792,,,0.9689922480620154,126.0,1.0,0.0
+0,1,random_repeatable_frozen_g555_m1,1.6228828430175781,,,0.9642857142857143,30.0,3.0,0.0
+0,2,random_repeatable_frozen_g555_m2,3.1761209964752197,,,1.0,50.0,3.0,0.0
+1,0,random_repeatable_frozen_g555_m0,5.331021785736084,,,0.926829268292683,115.0,1.0,0.0
+1,1,random_repeatable_frozen_g555_m1,1.8595426082611084,,,1.0,33.0,3.0,0.0
+1,2,random_repeatable_frozen_g555_m2,7.394256114959717,,,0.9594594594594594,74.0,3.0,0.0
+2,0,random_repeatable_frozen_g555_m0,5.038534879684448,,,0.9609375,124.0,1.0,0.0
+2,1,random_repeatable_frozen_g555_m1,2.73563551902771,,,1.0,47.0,3.0,0.0
+2,2,random_repeatable_frozen_g555_m2,10.713643074035645,,,0.9772727272727273,131.0,2.0,0.0

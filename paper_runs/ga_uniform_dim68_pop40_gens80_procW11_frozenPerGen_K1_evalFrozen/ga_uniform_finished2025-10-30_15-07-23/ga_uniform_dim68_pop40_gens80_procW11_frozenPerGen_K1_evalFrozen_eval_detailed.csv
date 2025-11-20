@@ -1,0 +1,5 @@
+seed,episode,scenario,sec,error,total_score,accuracy,hits,deaths,mean_eval_time
+0,0,random_repeatable_frozen_g555_m0,2.0160915851593018,,,0.9736842105263158,40.0,3.0,0.0
+0,1,random_repeatable_frozen_g555_m1,4.098056077957153,,,1.0,70.0,3.0,0.0
+1,0,random_repeatable_frozen_g555_m0,4.600957632064819,,,0.981651376146789,108.0,1.0,0.0
+1,1,random_repeatable_frozen_g555_m1,1.4042820930480957,,,0.9666666666666667,32.0,3.0,0.0
