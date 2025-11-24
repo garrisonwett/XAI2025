@@ -1,606 +1,653 @@
-# =============================================
-# TSK FIS Optimization Experiment Framework
-# =============================================
-
 import os
 import sys
-import json
-import csv
 import time
+import random
+import argparse
+import multiprocessing
+from datetime import datetime
+from typing import Dict, List, Tuple, Optional
+
 import numpy as np
 import matplotlib.pyplot as plt
-import multiprocessing as mp
-import logging
-from pathlib import Path
-from datetime import datetime
 
-# -------------------------------------------------
-# Fix Python path so we can import scenarios
-# when this file lives in a subfolder like
-# "Genetic Algorithm/GA Functions.py"
-# -------------------------------------------------
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(CURRENT_DIR)
-if PARENT_DIR not in sys.path:
-    sys.path.append(PARENT_DIR)
+from kesslergame import TrainerEnvironment, GraphicsType, KesslerGame
+from kesslergame.scenario import Scenario
 
-from kesslergame import TrainerEnvironment
-from scenarios import FROZEN_RANDOM, random_repeatable_frozen, scenarios as SCENARIOS
-from TeamTempNameSubmission.fuzzy_controller import FuzzyController
-from utils import LoggerUtility, LoggingLevel
+# Make sure we can import your controller
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from redone_controller import FuzzyController
 
-# ---------------------------------------------
-# CONFIGURATION PARAMETERS (Easy to Adjust)
-# ---------------------------------------------
-def get_config():
-    return {
-        "SEED": 42,
-        "NUM_TRIALS": 1,
-        "NUM_EVAL_EPISODES": 1,
-        "POPULATION_SIZE": 30,
-        "GENERATIONS": 100,
-        "CHROMOSOME_LENGTH": 68,
-        "OUTPUT_DIR": "./results/",
-        "OPTIMIZERS": ["GA", "PSO", "DE", "RL"],
-        "NUM_CORES": 8,
+# Import your scenarios and frozen map helper
+from scenarios import scenarios as SCENARIOS, random_repeatable_frozen
 
-        # Scenario configuration
-        # SCENARIO_MODE:
-        #   "frozen_random" -> use frozen random layouts from scenarios.py
-        #   "static"        -> use a named Scenario from scenarios.py
-        "SCENARIO_MODE": "static",
-        "TRAINING_SCENARIO_NAME": "training2",
-        "REFERENCE_SCENARIO_NAME": "training2",
+# -------------------------------------------------------------------
+# Default GA hyperparameters and globals
+# -------------------------------------------------------------------
 
-        # If using frozen_random mode, these control which generations are sampled
-        "REFERENCE_SCENARIO_GEN_IDX": 0,
+DEFAULT_CHROMOSOME_LENGTH = 177         # Length of chromosome
+DEFAULT_POPULATION_SIZE = 40            # Number of individuals
+DEFAULT_MAX_GENERATIONS = 200           # Number of generations
+DEFAULT_CROSSOVER_RATE = 0.8            # Probability of crossover
 
-        # GA Parameters
-        "GA_MUTATION_RATE": 0.1,
-        "GA_CROSSOVER_RATE": 0.7,
+# Mutation schedule start and end over generations
+DEFAULT_MUTATION_RATE_START = 0.9       # Early exploration
+DEFAULT_MUTATION_RATE_END = 0.05        # Late exploitation
+DEFAULT_MUTATION_STEP_START = 0.9
+DEFAULT_MUTATION_STEP_END = 0.02
 
-        # PSO Parameters
-        "PSO_INERTIA": 0.5,
-        "PSO_COGNITIVE": 1.5,
-        "PSO_SOCIAL": 1.5,
+DEFAULT_TOURNAMENT_K = 3                # Tournament size
+DEFAULT_NUM_CORES = max(1, multiprocessing.cpu_count() - 4)
 
-        # DE Parameters
-        "DE_MUTATION_FACTOR": 0.8,
-        "DE_CROSSOVER_RATE": 0.9,
+DEFAULT_DEATH_PENALTY_SCALE = 10.0      # Kept for compatibility (not used in new fitness)
 
-        # RL Parameters
-        "RL_EPISODES": 1000,
-    }
+# Time limit in hours. None means no limit.
+DEFAULT_MAX_HOURS = None
 
-CONFIG = get_config()
-logger = LoggerUtility(LoggingLevel.DEBUG).get_logger()
+RESULTS_ROOT = "Results"
 
-# Game settings for all environments
+# When no explicit training maps are provided, this many random frozen maps
+# are generated per generation using random_repeatable_frozen
+NUM_RANDOM_TRAINING_MAPS = 10
+
+# Stagnation handling
+STAGNATION_PATIENCE = 20            # generations without improvement
+STAGNATION_BOOST_FACTOR = 1.5
+STAGNATION_MAX_MUT_RATE = 0.7
+STAGNATION_MAX_MUT_STEP = 0.3
+
+# Elitism and immigrants
+ELITE_FRACTION = 0.1                # keep top 10 percent as elites
+MIN_ELITES = 2                      # at least this many elites
+IMMIGRANT_FRACTION = 0.05           # fraction of population replaced by random individuals when stagnant
+
+# Gene discretization
+GENE_RESOLUTION = 0.001             # round genes to nearest 0.001
+
+# KesslerGame and TrainerEnvironment settings
+# TrainerEnvironment will ignore graphics, KesslerGame will show them
 game_settings = {
     "frequency": 30,
-    "perf_tracker": True,
+    "perf_tracker": False,
     "prints_on": False,
-    "graphics_type": None,
+    "graphics_type": GraphicsType.Tkinter,
     "graphics_obj": None,
-    "realtime_multiplier": 1,
+    "realtime_multiplier": 1.0,
     "time_limit": float("inf"),
     "random_ast_splits": False,
-    "UI_settings": {},
+    "UI_settings": {
+        "ships": False,
+        "lives_remaining": False,
+        "accuracy": False,
+        "asteroids_hit": False,
+        "shots_fired": False,
+        "bullets_remaining": False,
+        "controller_name": False,
+    },
 }
 
+# Lazily created per process
+_GAME_ENV = None
 
-def create_game_env():
-    return TrainerEnvironment(settings=game_settings)
+# -------------------------------------------------------------------
+# GA building blocks
+# -------------------------------------------------------------------
 
-
-# -------------------------------------------------
-# Scenario selection helpers
-# -------------------------------------------------
-def get_training_scenario(gen_idx: int) -> "Scenario":
+def get_game_env() -> TrainerEnvironment:
     """
-    Scenario used for training or search at a given generation or episode.
-    Controlled by CONFIG["SCENARIO_MODE"].
-
-    - "static": always use a named scenario from scenarios.py
-    - "frozen_random": use frozen random layouts keyed by gen_idx
+    Lazily create a TrainerEnvironment per process.
     """
-    mode = CONFIG.get("SCENARIO_MODE", "frozen_random")
-    if mode == "static":
-        name = CONFIG.get("TRAINING_SCENARIO_NAME", "training2")
-        if name not in SCENARIOS:
-            raise KeyError(f"Training scenario '{name}' not found in scenarios.scenarios")
-        return SCENARIOS[name]
-    elif mode == "frozen_random":
-        return random_repeatable_frozen(gen_idx)
+    global _GAME_ENV
+    if _GAME_ENV is None:
+        _GAME_ENV = TrainerEnvironment(settings=game_settings)
+    return _GAME_ENV
+
+
+def create_random_individual(length: int) -> np.ndarray:
+    """
+    Create a random chromosome of a given length with genes in [0, 1],
+    then snap to a discrete grid if GENE_RESOLUTION is set.
+    """
+    ind = np.random.rand(length).astype(float)
+    if GENE_RESOLUTION is not None and GENE_RESOLUTION > 0:
+        ind = np.round(ind / GENE_RESOLUTION) * GENE_RESOLUTION
+        ind = np.clip(ind, 0.0, 1.0)
+    return ind
+
+
+def tournament_selection_index(population: List[np.ndarray], fitnesses: List[float], k: int) -> int:
+    """
+    Select one parent index via tournament selection.
+    """
+    best_idx = None
+    best_fit = -np.inf
+    n = len(population)
+    for _ in range(k):
+        idx = random.randrange(n)
+        fit = fitnesses[idx]
+        if fit > best_fit or best_idx is None:
+            best_fit = fit
+            best_idx = idx
+    return int(best_idx)
+
+
+def tournament_selection(population: List[np.ndarray], fitnesses: List[float], k: int) -> np.ndarray:
+    """
+    Select one parent via tournament selection, returning a copy of the chromosome.
+    """
+    idx = tournament_selection_index(population, fitnesses, k)
+    return population[idx].copy()
+
+
+def crossover(parent1: np.ndarray, parent2: np.ndarray, rate: float) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Uniform crossover with probability rate.
+    """
+    if random.random() < rate:
+        mask = np.random.rand(parent1.size) < 0.5
+        child1 = np.where(mask, parent1, parent2)
+        child2 = np.where(mask, parent2, parent1)
     else:
-        raise ValueError(f"Unknown SCENARIO_MODE: {mode}")
+        child1 = parent1.copy()
+        child2 = parent2.copy()
+    return child1, child2
 
 
-def get_reference_scenario() -> "Scenario":
+def mutate(ind: np.ndarray, rate: float, step: float) -> np.ndarray:
     """
-    Scenario used to evaluate the best solution of each generation or episode,
-    so that the fitness curves are on a consistent benchmark.
-
-    Respect CONFIG["SCENARIO_MODE"]:
-    - "static": use CONFIG["REFERENCE_SCENARIO_NAME"] from scenarios.scenarios
-    - "frozen_random": use FROZEN_RANDOM with fixed gen index
+    Per gene mutation.
+    Adds uniform noise in [-step, step] to each selected gene,
+    clamps back to [0, 1], and optionally snaps to a discrete grid.
     """
-    mode = CONFIG.get("SCENARIO_MODE", "frozen_random")
-    if mode == "static":
-        name = CONFIG.get("REFERENCE_SCENARIO_NAME", "training2")
-        if name not in SCENARIOS:
-            raise KeyError(f"Reference scenario '{name}' not found in scenarios.scenarios")
-        return SCENARIOS[name]
-    elif mode == "frozen_random":
-        gen_idx = CONFIG.get("REFERENCE_SCENARIO_GEN_IDX", 0)
-        return FROZEN_RANDOM.get(gen_idx=gen_idx)
-    else:
-        raise ValueError(f"Unknown SCENARIO_MODE: {mode}")
+    mask = np.random.rand(ind.size) < rate
+    if not np.any(mask):
+        return ind
+
+    noise = np.random.uniform(-step, step, size=ind.size)
+    mutated = ind + noise
+    mutated = np.clip(mutated, 0.0, 1.0)
+    out = np.where(mask, mutated, ind)
+
+    if GENE_RESOLUTION is not None and GENE_RESOLUTION > 0:
+        out = np.round(out / GENE_RESOLUTION) * GENE_RESOLUTION
+        out = np.clip(out, 0.0, 1.0)
+
+    return out
 
 
-def get_final_eval_scenario() -> "Scenario":
+def fitness_on_scenario(
+    env: TrainerEnvironment,
+    chromosome: np.ndarray,
+    scenario: Scenario,
+    death_penalty_scale: float,
+) -> float:
     """
-    Scenario used for final evaluation of each trial and for cross optimizer comparison.
+    Run one scenario and compute a richer fitness.
 
-    - "static": same as reference scenario
-    - "frozen_random": use a fixed but separate frozen random generation
+    Fitness components:
+      - Normalized kills
+      - Accuracy
+      - Survival time
+      - Penalty for deaths
+
+    death_penalty_scale is kept for compatibility but is not used
+    directly in this new fitness.
     """
-    mode = CONFIG.get("SCENARIO_MODE", "frozen_random")
-    if mode == "static":
-        # For static mode, just reuse the reference scenario for final evaluation
-        return get_reference_scenario()
-    elif mode == "frozen_random":
-        # Keep these large gen indices for separation from training and reference
-        return FROZEN_RANDOM.get(gen_idx=9999)
-    else:
-        raise ValueError(f"Unknown SCENARIO_MODE: {mode}")
+    score, _ = env.run(
+        chromosome,
+        scenario=scenario,
+        controllers=[FuzzyController()],
+    )
 
-
-def get_final_comparison_scenario() -> "Scenario":
-    """
-    Scenario used in final_comparison across optimizers.
-
-    - "static": same as reference scenario
-    - "frozen_random": another distinct frozen random layout
-    """
-    mode = CONFIG.get("SCENARIO_MODE", "frozen_random")
-    if mode == "static":
-        return get_reference_scenario()
-    elif mode == "frozen_random":
-        return FROZEN_RANDOM.get(gen_idx=99999)
-    else:
-        raise ValueError(f"Unknown SCENARIO_MODE: {mode}")
-
-
-# -------------------------------------------------
-# Fitness evaluation
-# -------------------------------------------------
-# Top level worker function so it is picklable by multiprocessing
-def _run_episode_for_chromosome(args):
-    """
-    Helper for a single episode.
-
-    args: tuple (chromosome, scenario)
-    """
-    chromosome, scenario = args
-    game = create_game_env()
-    score, _ = game.run(chromosome, scenario=scenario, controllers=[FuzzyController()])
     team = score.teams[0]
-    fitness = (team.asteroids_hit * team.accuracy) - team.deaths * 50
+
+    asteroids_hit = float(team.asteroids_hit)
+    deaths = float(team.deaths)
+    accuracy = float(getattr(team, "accuracy", 0.0))
+
+    num_asteroids = float(len(scenario.asteroid_states)) if scenario.asteroid_states is not None else float(
+        getattr(scenario, "num_asteroids", 0) or 0
+    )
+    if num_asteroids <= 0:
+        num_asteroids = 1.0
+    kills_norm = asteroids_hit / num_asteroids
+
+    time_limit = float(getattr(scenario, "time_limit", 60.0))
+    time_alive = float(getattr(team, "time_alive", time_limit))
+    time_norm = time_alive / max(1.0, time_limit)
+
+    deaths_capped = min(deaths, 3.0) / 3.0
+
+    # Weighted sum
+    fitness = (
+        3.0 * kills_norm +
+        1.5 * accuracy +
+        1.0 * time_norm -
+        4.0 * deaths_capped
+    )
+
+    # Clip to avoid extreme negative outliers dominating the GA
+    fitness = max(fitness, -50.0)
+
     return fitness
 
 
-def evaluate_chromosome(chromosome, scenario):
+def fitness_function(
+    chromosome: np.ndarray,
+    training_scenarios: List[Scenario],
+    death_penalty_scale: float = DEFAULT_DEATH_PENALTY_SCALE,
+) -> float:
     """
-    Evaluate a chromosome by running several episodes in the same scenario
-    and averaging the fitness. Single process version.
+    Fitness for a single chromosome.
+
+    Uses a bundle of training scenarios.
+    Fitness is the average over all training scenarios in the provided list.
     """
-    scores = [
-        _run_episode_for_chromosome((chromosome, scenario))
-        for _ in range(CONFIG["NUM_EVAL_EPISODES"])
+    env = get_game_env()
+    total = 0.0
+
+    for scenario in training_scenarios:
+        total += fitness_on_scenario(env, chromosome, scenario, death_penalty_scale)
+
+    return total / float(len(training_scenarios))
+
+
+# Helper for starmap
+def _fitness_wrapper(args):
+    chromosome, training_scenarios, death_penalty_scale = args
+    return fitness_function(chromosome, training_scenarios, death_penalty_scale)
+
+# -------------------------------------------------------------------
+# Main GA loop
+# -------------------------------------------------------------------
+
+def genetic_algorithm(
+    chromosome_length: int = DEFAULT_CHROMOSOME_LENGTH,
+    population_size: int = DEFAULT_POPULATION_SIZE,
+    max_generations: int = DEFAULT_MAX_GENERATIONS,
+    crossover_rate: float = DEFAULT_CROSSOVER_RATE,
+    mutation_rate_start: float = DEFAULT_MUTATION_RATE_START,
+    mutation_rate_end: float = DEFAULT_MUTATION_RATE_END,
+    mutation_step_start: float = DEFAULT_MUTATION_STEP_START,
+    mutation_step_end: float = DEFAULT_MUTATION_STEP_END,
+    tournament_k: int = DEFAULT_TOURNAMENT_K,
+    num_cores: int = DEFAULT_NUM_CORES,
+    death_penalty_scale: float = DEFAULT_DEATH_PENALTY_SCALE,
+    max_hours: Optional[float] = DEFAULT_MAX_HOURS,
+    training_maps: Optional[List[Scenario]] = None,
+) -> Tuple[np.ndarray, float, List[float], str]:
+    """
+    Run the genetic algorithm.
+
+    If training_maps is provided and non empty, those maps are used for every generation.
+    If training_maps is None or empty, each generation uses NUM_RANDOM_TRAINING_MAPS
+    maps produced by random_repeatable_frozen for that generation index.
+
+    Returns:
+        best_chromosome
+        best_training_fitness
+        training_best_history   best fitness per generation
+        run_dir                 path to Results/GA_[timestamp] folder
+    """
+    # Normalize training_maps
+    if training_maps is not None and len(training_maps) == 0:
+        training_maps = None
+
+    # Prepare run directory
+    os.makedirs(RESULTS_ROOT, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"GA_{timestamp}"
+    run_dir = os.path.join(RESULTS_ROOT, run_name)
+    os.makedirs(run_dir, exist_ok=True)
+
+    # Initial population
+    population = [create_random_individual(chromosome_length) for _ in range(population_size)]
+
+    best_overall = None
+    best_overall_fit = -np.inf
+    training_best_history: List[float] = []
+
+    # Extra diagnostics
+    pop_avg_history: List[float] = []
+    pop_median_history: List[float] = []
+    pop_min_history: List[float] = []
+    pop_max_history: List[float] = []
+
+    fitness_age = 0  # stagnation counter
+
+    start_time = time.perf_counter()
+    num_cores = max(1, int(num_cores))
+
+    with multiprocessing.Pool(processes=num_cores) as pool:
+        for gen in range(max_generations):
+            # Time based stopping
+            if max_hours is not None:
+                elapsed_hours = (time.perf_counter() - start_time) / 3600.0
+                if elapsed_hours >= max_hours:
+                    print(
+                        f"\nReached max time limit of {max_hours:.2f} hours "
+                        f"at generation {gen}. Stopping GA."
+                    )
+                    break
+
+            gen_start = time.perf_counter()
+
+            # Mutation schedule based on progress
+            if max_generations > 1:
+                progress = gen / float(max_generations - 1)
+            else:
+                progress = 1.0
+
+            base_mutation_rate = mutation_rate_start + progress * (mutation_rate_end - mutation_rate_start)
+            base_mutation_step = mutation_step_start + progress * (mutation_step_end - mutation_step_start)
+
+            # Choose training scenarios for this generation
+            if training_maps is not None:
+                scenarios_for_this_gen = training_maps
+            else:
+                scenarios_for_this_gen = []
+                for i in range(NUM_RANDOM_TRAINING_MAPS):
+                    scn = random_repeatable_frozen(
+                        gen_idx=gen,
+                        map_idx=i,
+                    )
+                    scenarios_for_this_gen.append(scn)
+
+            # Evaluate fitness in parallel on training scenarios
+            args_list = [
+                (ind, scenarios_for_this_gen, death_penalty_scale)
+                for ind in population
+            ]
+            fitnesses = pool.map(_fitness_wrapper, args_list)
+
+            # Generation statistics
+            gen_best_fit = max(fitnesses)
+            gen_best_idx = fitnesses.index(gen_best_fit)
+            gen_best_ind = population[gen_best_idx].copy()
+
+            avg_fit = float(np.mean(fitnesses))
+            med_fit = float(np.median(fitnesses))
+            min_fit = float(np.min(fitnesses))
+            max_fit_val = float(np.max(fitnesses))
+
+            pop_avg_history.append(avg_fit)
+            pop_median_history.append(med_fit)
+            pop_min_history.append(min_fit)
+            pop_max_history.append(max_fit_val)
+
+            # Track best overall and stagnation
+            if gen_best_fit > best_overall_fit + 1e-9:
+                best_overall_fit = gen_best_fit
+                best_overall = gen_best_ind.copy()
+                fitness_age = 0
+            else:
+                fitness_age += 1
+
+            # Start from scheduled mutation parameters
+            mutation_rate = base_mutation_rate
+            mutation_step = base_mutation_step
+
+            # Stagnation boost if no improvement for a while
+            if fitness_age >= STAGNATION_PATIENCE:
+                mutation_rate = min(mutation_rate * STAGNATION_BOOST_FACTOR, STAGNATION_MAX_MUT_RATE)
+                mutation_step = min(mutation_step * STAGNATION_BOOST_FACTOR, STAGNATION_MAX_MUT_STEP)
+                print(
+                    f"Stagnation detected (age {fitness_age}). "
+                    f"Boosting mutation_rate to {mutation_rate:.3f}, "
+                    f"mutation_step to {mutation_step:.3f}"
+                )
+
+            training_best_history.append(gen_best_fit)
+
+            gen_time = time.perf_counter() - gen_start
+
+            # Printout at end of generation
+            print(
+                f"[Gen {gen}] time: {gen_time:.2f} sec  "
+                f"mut_rate_base: {base_mutation_rate:.3f}  mut_step_base: {base_mutation_step:.3f}  "
+                f"train_best: {gen_best_fit:.3f}  "
+                f"pop_avg: {avg_fit:.3f}  pop_med: {med_fit:.3f}  "
+                f"pop_min: {min_fit:.3f}  pop_max: {max_fit_val:.3f}  "
+                f"overall_best_train: {best_overall_fit:.3f}"
+            )
+
+            # Elitism
+            elite_count = max(MIN_ELITES, int(population_size * ELITE_FRACTION))
+            elite_count = min(elite_count, population_size)
+            sorted_idx = sorted(range(population_size), key=lambda i: fitnesses[i], reverse=True)
+            elites = [population[i].copy() for i in sorted_idx[:elite_count]]
+
+            new_population: List[np.ndarray] = elites.copy()
+
+            # Adaptive mutation based on parent fitness relative to median
+            median_fit = float(np.median(fitnesses))
+
+            # Create rest of next population
+            while len(new_population) < population_size:
+                p1_idx = tournament_selection_index(population, fitnesses, tournament_k)
+                p2_idx = tournament_selection_index(population, fitnesses, tournament_k)
+                p1 = population[p1_idx]
+                p2 = population[p2_idx]
+
+                c1, c2 = crossover(p1, p2, crossover_rate)
+
+                rate1 = mutation_rate * (1.5 if fitnesses[p1_idx] < median_fit else 0.7)
+                rate2 = mutation_rate * (1.5 if fitnesses[p2_idx] < median_fit else 0.7)
+
+                c1 = mutate(c1, rate1, mutation_step)
+                c2 = mutate(c2, rate2, mutation_step)
+
+                new_population.append(c1)
+                if len(new_population) < population_size:
+                    new_population.append(c2)
+
+            # Random immigrants when stuck to reintroduce diversity
+            if fitness_age >= STAGNATION_PATIENCE:
+                num_immigrants = max(1, int(IMMIGRANT_FRACTION * population_size))
+                for i in range(num_immigrants):
+                    replace_idx = population_size - 1 - i
+                    if replace_idx <= 0:
+                        break
+                    new_population[replace_idx] = create_random_individual(chromosome_length)
+
+            population = new_population
+
+    total_time = time.perf_counter() - start_time
+    print(f"\nGA finished in {total_time:.2f} seconds")
+    print(f"Best overall training fitness: {best_overall_fit:.3f}")
+    print(f"Best chromosome:\n{best_overall}")
+
+    # Convert lists to arrays
+    training_best_arr = np.array(training_best_history, dtype=float)
+    pop_avg_arr = np.array(pop_avg_history, dtype=float)
+    pop_med_arr = np.array(pop_median_history, dtype=float)
+    pop_min_arr = np.array(pop_min_history, dtype=float)
+    pop_max_arr = np.array(pop_max_history, dtype=float)
+    gens = np.arange(len(training_best_arr))
+
+    # Save best chromosome as text
+    best_chr_path = os.path.join(run_dir, "best_chromsome.txt")
+    if best_overall is not None:
+        np.savetxt(best_chr_path, best_overall, fmt="%.6f")
+    else:
+        with open(best_chr_path, "w") as f:
+            f.write("No generations were completed, no best chromosome available.\n")
+
+    # Plot fitness vs generations and save
+    if len(training_best_arr) > 0:
+        fig, ax = plt.subplots()
+        ax.plot(gens, training_best_arr, label="Training best")
+        ax.plot(gens, pop_avg_arr, label="Population average")
+        ax.plot(gens, pop_med_arr, label="Population median")
+        ax.plot(gens, pop_min_arr, label="Population min")
+        ax.plot(gens, pop_max_arr, label="Population max")
+        ax.set_xlabel("Generation")
+        ax.set_ylabel("Fitness")
+        ax.set_title("Genetic Algorithm Progress")
+        ax.legend()
+        fig.tight_layout()
+        plot_path = os.path.join(run_dir, "fitness_vs_generation.png")
+        fig.savefig(plot_path)
+        plt.close(fig)
+    else:
+        plot_path = os.path.join(run_dir, "fitness_vs_generation.png")
+        with open(plot_path, "w") as f:
+            f.write("No generations were completed, no plot available.\n")
+
+    # Save parameters and all scores into one text file
+    params_path = os.path.join(run_dir, "ga_parameters.txt")
+    with open(params_path, "w") as f:
+        f.write("Genetic Algorithm Run Parameters and Results\n")
+        f.write(f"Run directory: {run_dir}\n")
+        f.write(f"Timestamp: {timestamp}\n\n")
+
+        f.write("Parameters:\n")
+        f.write(f"  chromosome_length         = {chromosome_length}\n")
+        f.write(f"  population_size           = {population_size}\n")
+        f.write(f"  max_generations           = {max_generations}\n")
+        f.write(f"  crossover_rate            = {crossover_rate}\n")
+        f.write(f"  mutation_rate_start       = {mutation_rate_start}\n")
+        f.write(f"  mutation_rate_end         = {mutation_rate_end}\n")
+        f.write(f"  mutation_step_start       = {mutation_step_start}\n")
+        f.write(f"  mutation_step_end         = {mutation_step_end}\n")
+        f.write(f"  tournament_k              = {tournament_k}\n")
+        f.write(f"  num_cores                 = {num_cores}\n")
+        f.write(f"  death_penalty_scale       = {death_penalty_scale}\n")
+        if training_maps is not None:
+            f.write(f"  training_mode             = fixed_maps\n")
+            f.write(f"  num_training_maps         = {len(training_maps)}\n")
+            f.write(f"  training_map_names        = {[s.name for s in training_maps]}\n")
+        else:
+            f.write(f"  training_mode             = random_frozen\n")
+            f.write(f"  num_training_maps         = {NUM_RANDOM_TRAINING_MAPS}\n")
+        f.write(f"  max_hours                 = {max_hours}\n")
+        f.write(f"  gene_resolution           = {GENE_RESOLUTION}\n")
+        f.write(f"  stagnation_patience       = {STAGNATION_PATIENCE}\n")
+        f.write(f"  stagnation_boost_factor   = {STAGNATION_BOOST_FACTOR}\n")
+        f.write(f"  stagnation_max_mut_rate   = {STAGNATION_MAX_MUT_RATE}\n")
+        f.write(f"  stagnation_max_mut_step   = {STAGNATION_MAX_MUT_STEP}\n")
+        f.write(f"  elite_fraction            = {ELITE_FRACTION}\n")
+        f.write(f"  min_elites                = {MIN_ELITES}\n")
+        f.write(f"  immigrant_fraction        = {IMMIGRANT_FRACTION}\n\n")
+
+        f.write("Summary:\n")
+        f.write(f"  total_time_seconds        = {total_time:.4f}\n")
+        f.write(f"  best_overall_training     = {best_overall_fit:.6f}\n")
+        f.write(f"  num_generations_ran       = {len(training_best_arr)}\n\n")
+
+        f.write("Per generation scores:\n")
+        f.write("  gen_index, training_best, pop_avg, pop_median, pop_min, pop_max\n")
+        for g, tr, pa, pm, pmin, pmax in zip(
+            gens, training_best_arr, pop_avg_arr, pop_med_arr, pop_min_arr, pop_max_arr
+        ):
+            f.write(
+                f"  {int(g)}, {tr:.6f}, {pa:.6f}, {pm:.6f}, {pmin:.6f}, {pmax:.6f}\n"
+            )
+
+    return best_overall, best_overall_fit, training_best_history, run_dir
+
+# -------------------------------------------------------------------
+# Visual demo helper
+# -------------------------------------------------------------------
+
+def run_best_chromosome_visual(best_chromosome: np.ndarray, scenario: Scenario) -> None:
+    """
+    Run the best chromosome in a visual KesslerGame on a given scenario.
+    """
+    demo_settings = dict(game_settings)
+    demo_settings["prints_on"] = True
+    demo_settings["UI_settings"] = {
+        "ships": True,
+        "lives_remaining": True,
+        "accuracy": True,
+        "asteroids_hit": True,
+        "shots_fired": True,
+        "bullets_remaining": True,
+        "controller_name": True,
+    }
+    demo_settings["graphics_type"] = GraphicsType.Tkinter
+
+    game = KesslerGame(settings=demo_settings)
+
+    print(f"\nLaunching visual run on scenario '{scenario.name}'...")
+    score, perf_data = game.run(
+        best_chromosome,
+        scenario=scenario,
+        controllers=[FuzzyController()],
+    )
+    print("Visual run finished.")
+    team = score.teams[0]
+    print(f"Asteroids hit: {team.asteroids_hit}, deaths: {team.deaths}, accuracy: {team.accuracy:.3f}")
+
+# -------------------------------------------------------------------
+# CLI entry point
+# -------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="GA to optimize fuzzy controller for Asteroids")
+
+    parser.add_argument("--chromosome_length", type=int, default=DEFAULT_CHROMOSOME_LENGTH,
+                        help="Length of chromosome")
+    parser.add_argument("--generations", type=int, default=DEFAULT_MAX_GENERATIONS,
+                        help="Number of generations")
+    parser.add_argument("--population", type=int, default=DEFAULT_POPULATION_SIZE,
+                        help="Population size")
+    parser.add_argument("--cores", type=int, default=DEFAULT_NUM_CORES,
+                        help="Worker processes for fitness evaluation")
+    parser.add_argument("--crossover", type=float, default=DEFAULT_CROSSOVER_RATE,
+                        help="Crossover rate")
+    parser.add_argument("--mutation_rate_start", type=float, default=DEFAULT_MUTATION_RATE_START,
+                        help="Initial per gene mutation rate")
+    parser.add_argument("--mutation_rate_end", type=float, default=DEFAULT_MUTATION_RATE_END,
+                        help="Final per gene mutation rate")
+    parser.add_argument("--mutation_step_start", type=float, default=DEFAULT_MUTATION_STEP_START,
+                        help="Initial mutation step size")
+    parser.add_argument("--mutation_step_end", type=float, default=DEFAULT_MUTATION_STEP_END,
+                        help="Final mutation step size")
+    parser.add_argument("--tournament_k", type=int, default=DEFAULT_TOURNAMENT_K,
+                        help="Tournament size for parent selection")
+    parser.add_argument("--death_penalty_scale", type=float, default=DEFAULT_DEATH_PENALTY_SCALE,
+                        help="Kept for compatibility (not used directly in new fitness)")
+    parser.add_argument("--max_hours", type=float, default=DEFAULT_MAX_HOURS,
+                        help="Max run time in hours. If set, no new generation starts after this limit.")
+
+    args = parser.parse_args()
+
+    # For now, use your existing training scenarios
+    training_maps = [
+        SCENARIOS["training1"],
+        SCENARIOS["training2"],
     ]
-    return sum(scores) / len(scores)
 
-
-def fitness_function(args):
-    """
-    Wrapper used by pool.map.
-
-    args: (chromosome, scenario)
-    """
-    chromosome, scenario = args
-    return evaluate_chromosome(chromosome, scenario)
-
-
-# -------------------------------------------------
-# Genetic Algorithm
-# -------------------------------------------------
-def run_ga(chromosome_length, pop_size, generations, pool):
-    mutation_rate = CONFIG["GA_MUTATION_RATE"]
-    crossover_rate = CONFIG["GA_CROSSOVER_RATE"]
-    population = np.random.rand(pop_size, chromosome_length)
-    fitness_curve = []
-
-    reference_scenario = get_reference_scenario()
-
-    for gen in range(generations):
-        # Scenario used for search this generation
-        search_scenario = get_training_scenario(gen)
-
-        # Evaluate population on search scenario in parallel
-        args_list = [(ind, search_scenario) for ind in population]
-        if pool is not None:
-            fitness = np.array(pool.map(fitness_function, args_list))
-        else:
-            fitness = np.array([fitness_function(args) for args in args_list])
-
-        elite = population[np.argmax(fitness)]
-        new_population = [elite.copy()]
-
-        # Selection, crossover, mutation to form new population
-        for _ in range(pop_size - 1):
-            idx = np.argsort(fitness)[-2:]
-            p1, p2 = population[idx[0]], population[idx[1]]
-            if np.random.rand() < crossover_rate:
-                point = np.random.randint(1, chromosome_length - 1)
-                child = np.concatenate([p1[:point], p2[point:]])
-            else:
-                child = p1.copy()
-            for i in range(chromosome_length):
-                if np.random.rand() < mutation_rate:
-                    child[i] = np.random.rand()
-            new_population.append(child)
-
-        population = np.clip(np.array(new_population), 0, 1)
-
-        # Track progress by evaluating the elite on the fixed reference scenario
-        reference_fitness = evaluate_chromosome(elite, reference_scenario)
-        fitness_curve.append(reference_fitness)
-        print(f"[{datetime.now()}] GA Gen {gen + 1}: Ref Fitness = {reference_fitness:.4f}")
-
-    # Final selection on a fixed scenario for consistency
-    final_scenario = get_final_eval_scenario()
-    args_list = [(ind, final_scenario) for ind in population]
-    if pool is not None:
-        final_fitness = np.array(pool.map(fitness_function, args_list))
-    else:
-        final_fitness = np.array([fitness_function(args) for args in args_list])
-
-    best_idx = np.argmax(final_fitness)
-    return population[best_idx].tolist(), {"fitness_curve": fitness_curve}
-
-
-# -------------------------------------------------
-# Particle Swarm Optimization
-# -------------------------------------------------
-def run_pso(chromosome_length, pop_size, generations, pool):
-    w, c1, c2 = CONFIG["PSO_INERTIA"], CONFIG["PSO_COGNITIVE"], CONFIG["PSO_SOCIAL"]
-    positions = np.random.rand(pop_size, chromosome_length)
-    velocities = np.random.rand(pop_size, chromosome_length) * 0.1
-    personal_best = positions.copy()
-
-    # Initial search scenario for seeding personal bests
-    initial_search_scenario = get_training_scenario(0)
-    args_list = [(ind, initial_search_scenario) for ind in positions]
-    if pool is not None:
-        personal_best_scores = np.array(pool.map(fitness_function, args_list))
-    else:
-        personal_best_scores = np.array([fitness_function(args) for args in args_list])
-
-    global_best = personal_best[np.argmax(personal_best_scores)]
-    global_best_score = max(personal_best_scores)
-
-    reference_scenario = get_reference_scenario()
-    # Track progress on reference scenario
-    initial_reference_fitness = evaluate_chromosome(global_best, reference_scenario)
-    fitness_curve = [initial_reference_fitness]
-    print(f"[{datetime.now()}] PSO Init: Ref Fitness = {initial_reference_fitness:.4f}")
-
-    for gen in range(generations):
-        search_scenario = get_training_scenario(gen + 1)
-
-        # Update positions and velocities
-        for i in range(pop_size):
-            r1, r2 = np.random.rand(), np.random.rand()
-            velocities[i] = (
-                w * velocities[i]
-                + c1 * r1 * (personal_best[i] - positions[i])
-                + c2 * r2 * (global_best - positions[i])
-            )
-            positions[i] = np.clip(positions[i] + velocities[i], 0, 1)
-
-        # Evaluate all particles on this generation's search scenario in parallel
-        args_list = [(positions[i], search_scenario) for i in range(pop_size)]
-        if pool is not None:
-            scores = np.array(pool.map(fitness_function, args_list))
-        else:
-            scores = np.array([fitness_function(args) for args in args_list])
-
-        # Update personal and global bests
-        for i in range(pop_size):
-            score = scores[i]
-            if score > personal_best_scores[i]:
-                personal_best[i] = positions[i].copy()
-                personal_best_scores[i] = score
-                if score > global_best_score:
-                    global_best = positions[i].copy()
-                    global_best_score = score
-
-        # Log fitness on the reference scenario using current global best
-        reference_fitness = evaluate_chromosome(global_best, reference_scenario)
-        fitness_curve.append(reference_fitness)
-        print(f"[{datetime.now()}] PSO Gen {gen + 1}: Ref Fitness = {reference_fitness:.4f}")
-
-    return global_best.tolist(), {"fitness_curve": fitness_curve}
-
-
-# -------------------------------------------------
-# Differential Evolution
-# -------------------------------------------------
-def run_de(chromosome_length, pop_size, generations, pool):
-    F = CONFIG["DE_MUTATION_FACTOR"]
-    CR = CONFIG["DE_CROSSOVER_RATE"]
-    population = np.random.rand(pop_size, chromosome_length)
-    fitness_curve = []
-
-    reference_scenario = get_reference_scenario()
-
-    for gen in range(generations):
-        search_scenario = get_training_scenario(gen)
-
-        # Evaluate current population in parallel on search scenario
-        args_list = [(ind, search_scenario) for ind in population]
-        if pool is not None:
-            fitness = np.array(pool.map(fitness_function, args_list))
-        else:
-            fitness = np.array([fitness_function(args) for args in args_list])
-
-        best_idx = np.argmax(fitness)
-        best_individual = population[best_idx].copy()
-        new_population = [best_individual]
-
-        # For each target vector, build a trial vector
-        for i in range(pop_size - 1):
-            # Indices of all individuals except i
-            all_indices = np.arange(pop_size)
-            mask = all_indices != i
-            candidate_indices = all_indices[mask]
-
-            if candidate_indices.size >= 3:
-                # Standard DE: 3 distinct vectors different from target
-                a_idx, b_idx, c_idx = np.random.choice(candidate_indices, 3, replace=False)
-            else:
-                # Population is too small to draw 3 distinct others
-                # Fall back to sampling with replacement from full pool
-                a_idx, b_idx, c_idx = np.random.choice(all_indices, 3, replace=True)
-
-            a = population[a_idx]
-            b = population[b_idx]
-            c = population[c_idx]
-
-            mutant = np.clip(a + F * (b - c), 0, 1)
-            cross_points = np.random.rand(chromosome_length) < CR
-            if not np.any(cross_points):
-                cross_points[np.random.randint(0, chromosome_length)] = True
-            trial = np.where(cross_points, mutant, population[i])
-
-            # Evaluate trial fitness on search scenario (single process)
-            trial_fitness = evaluate_chromosome(trial, search_scenario)
-            if trial_fitness > fitness[i]:
-                new_population.append(trial)
-            else:
-                new_population.append(population[i])
-
-        population = np.array(new_population)
-
-        # After updating population, evaluate again for logging
-        args_list = [(ind, search_scenario) for ind in population]
-        if pool is not None:
-            fitness = np.array(pool.map(fitness_function, args_list))
-        else:
-            fitness = np.array([fitness_function(args) for args in args_list])
-
-        best_idx = np.argmax(fitness)
-        best_individual = population[best_idx]
-
-        reference_fitness = evaluate_chromosome(best_individual, reference_scenario)
-        fitness_curve.append(reference_fitness)
-        print(f"[{datetime.now()}] DE Gen {gen + 1}: Ref Fitness = {reference_fitness:.4f}")
-
-    best_idx = np.argmax(fitness)
-    return population[best_idx].tolist(), {"fitness_curve": fitness_curve}
-
-
-# -------------------------------------------------
-# Simple Random Search (RL placeholder)
-# -------------------------------------------------
-def run_rl(chromosome_length, episodes):
-    """
-    Simple random search that keeps track of the best seen chromosome.
-    Fitness curve is logged on the fixed reference scenario.
-    Single process only.
-    """
-    best = None
-    best_score_search = -np.inf
-    fitness_curve = []
-
-    reference_scenario = get_reference_scenario()
-
-    for ep in range(episodes):
-        candidate = np.random.rand(chromosome_length)
-        # Search scenario still changes with episode if using frozen_random
-        search_scenario = get_training_scenario(ep)
-        score = evaluate_chromosome(candidate, search_scenario)
-        if score > best_score_search or best is None:
-            best_score_search = score
-            best = candidate.copy()
-
-        # Log best so far on the fixed reference scenario
-        reference_fitness = evaluate_chromosome(best, reference_scenario)
-        fitness_curve.append(reference_fitness)
-        print(f"[{datetime.now()}] RL Episode {ep + 1}: Ref Fitness = {reference_fitness:.4f}")
-
-    return best.tolist(), {"fitness_curve": fitness_curve}
-
-
-# -------------------------------------------------
-# Trial runner and orchestration
-# -------------------------------------------------
-def run_single_trial(args):
-    optimizer_name, trial_index = args
-    np.random.seed(CONFIG["SEED"] + trial_index)
-    print(f"[{datetime.now()}] Running {optimizer_name} trial {trial_index + 1}")
-
-    with mp.Pool(CONFIG["NUM_CORES"]) as pool:
-        if optimizer_name == "GA":
-            best, log = run_ga(
-                CONFIG["CHROMOSOME_LENGTH"],
-                CONFIG["POPULATION_SIZE"],
-                CONFIG["GENERATIONS"],
-                pool,
-            )
-        elif optimizer_name == "PSO":
-            best, log = run_pso(
-                CONFIG["CHROMOSOME_LENGTH"],
-                CONFIG["POPULATION_SIZE"],
-                CONFIG["GENERATIONS"],
-                pool,
-            )
-        elif optimizer_name == "DE":
-            best, log = run_de(
-                CONFIG["CHROMOSOME_LENGTH"],
-                CONFIG["POPULATION_SIZE"],
-                CONFIG["GENERATIONS"],
-                pool,
-            )
-        elif optimizer_name == "RL":
-            # RL uses no multiprocessing internally
-            best, log = run_rl(
-                CONFIG["CHROMOSOME_LENGTH"],
-                CONFIG["RL_EPISODES"],
-            )
-        else:
-            raise ValueError(f"Unsupported optimizer: {optimizer_name}")
-
-    # Final evaluation on a fixed scenario, single process
-    final_scenario = get_final_eval_scenario()
-    final_score = evaluate_chromosome(best, final_scenario)
-    return final_score, best, log
-
-
-def run_optimizer_trials(optimizer_name):
-    results = [run_single_trial((optimizer_name, i)) for i in range(CONFIG["NUM_TRIALS"])]
-    return zip(*results)
-
-
-def save_results(optimizer_name, scores, chromosomes, logs):
-    Path(CONFIG["OUTPUT_DIR"]).mkdir(parents=True, exist_ok=True)
-    with open(os.path.join(CONFIG["OUTPUT_DIR"], f"{optimizer_name}_summary.csv"), "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Trial", "Score"])
-        for i, s in enumerate(scores):
-            writer.writerow([i + 1, s])
-
-    json.dump(
-        list(chromosomes),
-        open(os.path.join(CONFIG["OUTPUT_DIR"], f"{optimizer_name}_chromosomes.json"), "w"),
-        indent=2,
-    )
-    json.dump(
-        list(logs),
-        open(os.path.join(CONFIG["OUTPUT_DIR"], f"{optimizer_name}_logs.json"), "w"),
-        indent=2,
+    best_chromosome, best_fitness, train_hist, run_dir = genetic_algorithm(
+        chromosome_length=args.chromosome_length,
+        population_size=args.population,
+        max_generations=args.generations,
+        crossover_rate=args.crossover,
+        mutation_rate_start=args.mutation_rate_start,
+        mutation_rate_end=args.mutation_rate_end,
+        mutation_step_start=args.mutation_step_start,
+        mutation_step_end=args.mutation_step_end,
+        tournament_k=args.tournament_k,
+        num_cores=args.cores,
+        death_penalty_scale=args.death_penalty_scale,
+        max_hours=args.max_hours,
+        training_maps=training_maps,
     )
 
-    if isinstance(logs[0], dict) and "fitness_curve" in logs[0]:
-        plt.figure()
-        for i, log in enumerate(logs):
-            plt.plot(log["fitness_curve"], label=f"Trial {i+1}")
-        plt.title(f"{optimizer_name} Fitness over Generations (Reference Scenario)")
-        plt.xlabel("Generation or Episode")
-        plt.ylabel("Fitness on Reference Scenario")
-        plt.legend()
-        plt.savefig(os.path.join(CONFIG["OUTPUT_DIR"], f"{optimizer_name}_fitness.png"))
-        plt.close()
+    print(f"\nRun results saved in: {run_dir}")
 
+    # Final interactive prompt
+    try:
+        choice = input('Press "e" to display best chromsome or press any other button to end: ').strip().lower()
+    except EOFError:
+        choice = ""
 
-def final_comparison(best_chromosomes):
-    # Use a shared fixed scenario
-    scenario = get_final_comparison_scenario()
-    results = {}
-    for optimizer, chromosome in best_chromosomes.items():
-        score = evaluate_chromosome(chromosome, scenario)
-        results[optimizer] = score
-
-    plt.figure()
-    plt.bar(results.keys(), results.values())
-    plt.title("Final Optimizer Comparison on Shared Scenario")
-    plt.ylabel("Final Score")
-    plt.savefig(os.path.join(CONFIG["OUTPUT_DIR"], "final_comparison.png"))
-    plt.close()
-    return results
-
-
-def overlay_best_curves(all_logs):
-    """
-    Plot best trial fitness curves vs raw generation index
-    using the reference scenario fitness.
-    """
-    plt.figure()
-    for opt, logs in all_logs.items():
-        best_log = max(logs, key=lambda l: l["fitness_curve"][-1])
-        plt.plot(best_log["fitness_curve"], label=opt)
-    plt.title("Best Trial Fitness Comparison (Reference Scenario)")
-    plt.xlabel("Generation or Episode")
-    plt.ylabel("Fitness on Reference Scenario")
-    plt.legend()
-    plt.savefig(os.path.join(CONFIG["OUTPUT_DIR"], "optimizer_overlay.png"))
-    plt.close()
-
-
-def overlay_best_curves_percent(all_logs):
-    """
-    Plot best trial fitness curves vs percent of generations
-    or episodes completed so that curves of different lengths
-    align from 0 to 100 percent.
-    """
-    plt.figure()
-    for opt, logs in all_logs.items():
-        best_log = max(logs, key=lambda l: l["fitness_curve"][-1])
-        curve = best_log["fitness_curve"]
-        if len(curve) <= 1:
-            x_vals = [0.0] * len(curve)
-        else:
-            x_vals = [100.0 * i / (len(curve) - 1) for i in range(len(curve))]
-        plt.plot(x_vals, curve, label=opt)
-    plt.title("Best Trial Fitness vs Generations Percent (Reference Scenario)")
-    plt.xlabel("Generations Percent")
-    plt.ylabel("Fitness on Reference Scenario")
-    plt.legend()
-    plt.savefig(os.path.join(CONFIG["OUTPUT_DIR"], "optimizer_overlay_percent.png"))
-    plt.close()
-
-
-def run_all():
-    np.random.seed(CONFIG["SEED"])
-    best_chromosomes = {}
-    all_logs = {}
-
-    for optimizer in CONFIG["OPTIMIZERS"]:
-        print(f"[{datetime.now()}] === Running optimizer: {optimizer} ===")
-        scores, chromosomes, logs = run_optimizer_trials(optimizer)
-        scores, chromosomes, logs = list(scores), list(chromosomes), list(logs)
-        save_results(optimizer, scores, chromosomes, logs)
-        best_idx = np.argmax(scores)
-        best_chromosomes[optimizer] = chromosomes[best_idx]
-        all_logs[optimizer] = logs
-
-    final_results = final_comparison(best_chromosomes)
-    overlay_best_curves(all_logs)
-    overlay_best_curves_percent(all_logs)
-    print(f"[{datetime.now()}] All evaluations complete. Final results: {final_results}")
-
+    if choice == "e" and best_chromosome is not None:
+        # Show visual run on training1 by default
+        vis_scenario = SCENARIOS["training1"]
+        run_best_chromosome_visual(best_chromosome, vis_scenario)
+    else:
+        print("Exiting without visual run.")
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn", force=True)
-    run_all()
+    main()

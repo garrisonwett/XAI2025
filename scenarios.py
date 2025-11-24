@@ -154,6 +154,7 @@ def random_repeatable_frozen(
         name_prefix="random_repeatable_frozen",
     )
 
+
 # =============================================================================
 # Static scenarios
 # =============================================================================
@@ -281,6 +282,7 @@ scenarios: Dict[str, Scenario] = {
         ],
     ),
 }
+
 
 # Example frozen random map (useful for debugging)
 scenarios["random_repeatable_frozen_example_gen0"] = random_repeatable_frozen(

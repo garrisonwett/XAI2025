@@ -1,13 +1,15 @@
 import argparse
 import os
 import sys
+import numpy as np
 import time
 
 from kesslergame import GraphicsType, KesslerGame, Scenario, TrainerEnvironment
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from TeamTempNameSubmission.fuzzy_controller import FuzzyController
+#from TeamTempNameSubmission.fuzzy_controller import FuzzyController
+from redone_controller import FuzzyController
 from scenarios import scenarios, random_repeatable_frozen
 from utils import LoggerUtility, LoggingLevel
 
@@ -68,9 +70,9 @@ if __name__ == "__main__":
     initial_time = time.perf_counter()
 
 
-    chromosome = None  # No chromosome needed for standard controllers
+    chromosome = [0.700, 0.701, 0.700, 0.700, -0.000, 0.600, 0.100, 0.500, 0.400, 0.100, 0.700, 0.800, 0.500, 0.600, 0.900, 0.000, 0.800, 0.400, 0.600, 0.800, 0.200, 0.200, 0.000, 0.300, 0.800, 0.000, 0.700, 0.400, 0.500, 0.100, 0.300, 0.200, 0.600, 0.100, 0.100, 0.800, 0.800, 0.900, 0.200, 0.300, 0.200, 0.100, 0.500, 0.699, 0.900, 0.100, 0.100, 0.200, 0.300, 0.800, 0.400, 0.700, 0.400, 0.400, 0.400, 0.000, 0.200, 0.700, 0.800, -0.000, 0.900, 0.100, 0.600, 0.100, 0.400, 0.600, 0.800, 0.800, 0.700, 0.500, -0.000, 0.700, 0.600, 0.200, 0.500, 0.800, 0.500, 0.700, 0.500, 0.500, 0.701, 0.400, 0.100, 0.000, 0.900, 0.800, 0.700, 0.500, 0.800, 0.000, 0.600, 0.400, -0.000, 0.000, 0.500, 0.000, 0.900, 0.801, 0.100, 0.400, 0.300, 0.000, 0.400, 0.700, 0.000, 0.500, 0.800, 0.700, 0.800, 0.400, 0.300, -0.000, 0.300, 0.600, 0.000, 0.300, 0.600, 0.600, 0.200, 0.700, 0.500, 0.300, 0.900, 0.500, 0.000, 0.300, 0.600, 0.500, 0.400, 0.200, 0.100, 0.400, 0.000, 0.500, 0.300, 0.000, 0.001, 0.400, 0.400, 0.800, 0.200, 0.900, 0.200, 0.900, 0.700, 0.000, 0.600, 0.300, 0.500, 0.300, 0.500, 0.100, 0.900, 0.300, 0.200, 0.900, 0.000, 0.900, 0.800, 0.700, 0.300, 0.600, 0.000, 0.600, 0.600, 0.800, 0.400, 0.300, 0.900, 0.300, -0.000, 0.700, 0.600, 0.700, 0.500, 0.800, 0.500]  # No chromosome needed for standard controllers
 
-    gen = 2
+    gen = np.random.randint(0, 1000000)
     selected_scenario = random_repeatable_frozen(gen)
     
     score, perf_data = game.run(
