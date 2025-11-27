@@ -24,7 +24,7 @@ from scenarios import scenarios as SCENARIOS, random_repeatable_frozen
 # Default GA hyperparameters and globals
 # -------------------------------------------------------------------
 
-DEFAULT_CHROMOSOME_LENGTH = 177         # Length of chromosome
+DEFAULT_CHROMOSOME_LENGTH = 68         # Length of chromosome
 DEFAULT_POPULATION_SIZE = 40            # Number of individuals
 DEFAULT_MAX_GENERATIONS = 200           # Number of generations
 DEFAULT_CROSSOVER_RATE = 0.8            # Probability of crossover
