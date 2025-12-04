@@ -137,7 +137,7 @@ def turn_angle(
     ratio = 8/distance
     ratio = max(-1.0, min(1.0, ratio))
     angle_rad = math.asin(ratio)
-    tolerance = math.degrees(angle_rad)
+    tolerance = math.degrees(angle_rad)+1
 
     # If the angular difference is negligible, no turn is needed.
     if math.isclose(angle_delta, 0, abs_tol=1e-6):
@@ -336,7 +336,6 @@ def game_to_ship_frame(
     """
     map_x, map_y = game_size
     old_x, old_y = position_vector
-
     relative_positions = []
     for ast in asteroid_positions:
         dx = ast[0] - old_x
@@ -445,3 +444,105 @@ def speed_to_thrust(current_speed: float, target_speed: float) -> float:
     thrust = min(max(30 * (target_speed - current_speed), -500), 500)
 
     return thrust
+
+
+
+import numpy as np
+import math
+
+
+def compute_safe_point_controls(
+    ship_pos,
+    ship_heading,
+    thrust_range,
+    turn_rate_range,
+    map_width,
+    map_height,
+    asteroid_positions,
+    asteroid_velocities,
+    asteroid_radii,
+    ship_radius
+):
+    """
+    Computes thrust and turn rate to move toward the safest reachable point
+    on the map using a sampled threat field.
+
+    Uses only variables already parsed inside the actions method.
+    """
+
+    # -----------------------------------------
+    # 1. Build candidate sample points
+    # -----------------------------------------
+    xs = np.linspace(0, map_width, 20)
+    ys = np.linspace(0, map_height, 20)
+
+    best_point = None
+    best_threat = float("inf")
+
+    # -----------------------------------------
+    # 2. Evaluate danger at each point
+    # -----------------------------------------
+    for x in xs:
+        for y in ys:
+            p = np.array([x, y])
+
+            threat = 0.0
+
+            for apos, avel, arad in zip(asteroid_positions, asteroid_velocities, asteroid_radii):
+                apos = np.array(apos)
+                avel = np.array(avel)
+                d = np.linalg.norm(p - apos)
+                if d < 1e-6:
+                    d = 1e-6
+
+                # Relative velocity toward this point
+                rel = avel
+                proj = abs(np.dot(rel, (p - apos)) / d)
+
+                # Distance buffer
+                buffer_dist = max(ship_radius + arad, 1.0)
+
+                # Basic threat measure
+                threat += (proj + 1.0) / (d - buffer_dist + 1.0)
+
+            if threat < best_threat:
+                best_threat = threat
+                best_point = p
+
+    # -----------------------------------------
+    # 3. Steering to best point
+    # -----------------------------------------
+    target_vec = best_point - np.array(ship_pos)
+    target_angle = math.atan2(target_vec[1], target_vec[0])
+
+    # Helper
+    def wrap_angle(a):
+        while a > math.pi:
+            a -= 2 * math.pi
+        while a < -math.pi:
+            a += 2 * math.pi
+        return a
+
+    angle_diff = wrap_angle(target_angle - ship_heading)
+
+    # -----------------------------------------
+    # 4. Compute turn command within limits
+    # -----------------------------------------
+    turn_min, turn_max = turn_rate_range
+
+    if angle_diff > 0:
+        turn_rate = turn_max * (angle_diff / math.pi)
+    else:
+        turn_rate = turn_min * (abs(angle_diff) / math.pi)
+
+    turn_rate = max(min(turn_rate, turn_max), turn_min)
+
+    # -----------------------------------------
+    # 5. Compute thrust based on alignment
+    # -----------------------------------------
+    alignment = 1.0 - abs(angle_diff) / math.pi
+    thrust_min, thrust_max = thrust_range
+
+    thrust = thrust_min + alignment * (thrust_max - thrust_min)
+
+    return thrust, turn_rate
