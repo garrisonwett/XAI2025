@@ -95,6 +95,8 @@ if __name__ == "__main__":
         controllers=[FuzzyController(chromosome)]
     )
 
+    
+
     print("Total scenario eval time:", time.perf_counter() - initial_time)
     print("Stop reason:", score.stop_reason)
     print("Asteroids hit:", [team.asteroids_hit for team in score.teams])

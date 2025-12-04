@@ -1,43 +1,24 @@
 from typing import TYPE_CHECKING
 from kesslergame import KesslerController
-
 import math
 import numpy as np
 
 from utils.kessler_helpers import get_bullet_speed
 from TeamTempNameSubmission import vector_math as vm
-
-from algorithms import fuzzy_tree_output   # safe: algorithms does NOT import controller
+from algorithms import fuzzy_tree_output, compile_chromosome
 
 if TYPE_CHECKING:
     from utils.types import ActionsReturn, GameState, ShipOwnState
 
 
 class FuzzyController(KesslerController):
-
     def __init__(self, chromosome):
         super().__init__()
         self._name = "BajaBlasteroids"
         self.chromosome = chromosome
 
-        from algorithms import compile_chromosome
+        # Ensure chromosome is compiled for fast execution
         compile_chromosome(self.chromosome)
-
-
-        # # Assign IDs for readability
-        # assign_fis_ids(self.chromosome)
-
-        # print("\n================ Fuzzy Tree Structure ================")
-        # print_tree_structure(self.chromosome)
-
-        # print("\n================ Membership Functions ================")
-        # print_membership_functions(self.chromosome)
-
-        # print("\n================ Rule Constants ================")
-        # print_rule_constants(self.chromosome)
-
-        # print("\n================ End Tree Print =================\n")
-
         self.bullet_speed = get_bullet_speed()
 
     @property
@@ -57,133 +38,116 @@ class FuzzyController(KesslerController):
         # Parse own ship information
         # -------------------------------
         ship_pos          = ship_state["position"]
-        ship_vel          = ship_state["velocity"]
-        ship_speed        = ship_state["speed"]
         ship_heading      = ship_state["heading"]
-        ship_mass         = ship_state["mass"]
-        ship_radius       = ship_state["radius"]
-        ship_id           = ship_state["id"]
-        ship_team         = ship_state["team"]
-        ship_lives        = ship_state["lives_remaining"]
-        ship_respawning   = ship_state["is_respawning"]
-
-        bullets_remaining = ship_state["bullets_remaining"]
-        mines_remaining   = ship_state["mines_remaining"]
-        can_fire          = ship_state["can_fire"]
-        fire_rate         = ship_state["fire_rate"]
-        can_deploy_mine   = ship_state["can_deploy_mine"]
-        mine_deploy_rate  = ship_state["mine_deploy_rate"]
-
-        thrust_range      = ship_state["thrust_range"]
+        ship_speed        = ship_state["speed"]
+        
         turn_rate_range   = ship_state["turn_rate_range"]
-        max_speed         = ship_state["max_speed"]
-        drag              = ship_state["drag"]
 
         # -------------------------------
         # Parse world information
         # -------------------------------
         asteroids   = game_state["asteroids"]
-        ships       = game_state["ships"]
         bullets     = game_state["bullets"]
-        mines       = game_state["mines"]
 
         map_width, map_height = game_state["map_size"]
-        world_time            = game_state["time"]
         delta_time            = game_state["delta_time"]
-        frame                 = game_state["sim_frame"]
-        time_limit            = game_state["time_limit"]
 
-        # --------------------------------
-        # Parsed lists for convenience
-        # --------------------------------
-        asteroid_positions  = [a["position"] for a in asteroids]
-        asteroid_velocities = [a["velocity"] for a in asteroids]
-        asteroid_radii      = [a["radius"] for a in asteroids]
-
-        other_ship_positions = [s["position"] for s in ships]
-        other_ship_headings  = [s["heading"] for s in ships]
-
-        bullet_positions     = [b["position"] for b in bullets]
-        bullet_velocities    = [b["velocity"] for b in bullets]
-
-        mine_positions       = [m["position"] for m in mines]
-        mine_remaining_times = [m["remaining_time"] for m in mines]
-
-        # --------------------------------
-        # Placeholder outputs for now
-        # --------------------------------
-
-
+        # If no asteroids, sit still and don't shoot
         if not asteroids:
             return 0.0, 0.0, False, False
 
         # ---------------------------------
-        # Threat determination
+        # FILTER: IGNORE DOOMED ASTEROIDS
         # ---------------------------------
-        highest_threat_value = -9999
-        highest_threat_index = 0
+        # We track asteroids by INDEX (0, 1, 2...) because 'id' might be missing
+        doomed_indices = set()
+        
+        for b in bullets:
+            b_pos = np.array(b["position"])
+            b_vel = np.array(b["velocity"])
 
-        for i, asteroid in enumerate(asteroids):
+            for i, a in enumerate(asteroids):
+                # Skip if we already know this asteroid is dead
+                if i in doomed_indices:
+                    continue
 
+                a_pos = np.array(a["position"])
+                a_vel = np.array(a["velocity"])
+                a_rad = a["radius"]
+
+                # Vector Math to predict collision
+                rel_pos = a_pos - b_pos
+                rel_vel = a_vel - b_vel
+                
+                v_dot_v = np.dot(rel_vel, rel_vel)
+                
+                # Check if moving towards each other
+                if v_dot_v > 0:
+                    t_closest = -np.dot(rel_pos, rel_vel) / v_dot_v
+                    
+                    # Check if collision is in the near future (0 to 3 seconds)
+                    if t_closest > 0 and t_closest < 3.0:
+                        dist_at_t = np.linalg.norm(rel_pos + rel_vel * t_closest)
+                        
+                        # Check collision radius
+                        if dist_at_t < (a_rad):
+                            doomed_indices.add(i)
+                            break # Bullet used up on this asteroid
+
+        # Create a list of asteroids that are NOT doomed
+        viable_asteroids = [a for i, a in enumerate(asteroids) if i not in doomed_indices]
+
+        # If all asteroids are doomed, sit tight
+        if not viable_asteroids:
+             return 0.0, 0.0, False, False
+
+        # ---------------------------------
+        # BATCH INPUT CALCULATION
+        # ---------------------------------
+        num_asteroids = len(viable_asteroids)
+        inputs_batch = np.zeros((num_asteroids, 4), dtype=np.float64)
+        
+        max_dist = math.sqrt(map_width**2 + map_height**2)
+
+        for i, asteroid in enumerate(viable_asteroids):
             apos = asteroid["position"]
             avel = asteroid["velocity"]
             arad = asteroid["radius"]
 
-            # 1. relative heading (0 to 1)
-            relative_heading = vm.heading_relative_angle(
-                ship_pos,
-                ship_heading,
-                apos
-            ) / 360.0
+            # 1. Relative Heading
+            rel_ang_deg = vm.heading_relative_angle(ship_pos, ship_heading, apos)
+            rel_heading_norm = rel_ang_deg / 360.0
+            input_heading = abs(rel_heading_norm - 1.0)
 
-            # 2. relative asteroid position (dx, dy)
-            rel_position = vm.game_to_ship_frame(
-                ship_pos,
-                [apos],
-                game_state["map_size"]
-            )[0]
-
-            # 3. closure rate
+            # 2. Closure Rate
             closure = vm.calculate_closure_rate(
-                ship_pos,
-                ship_heading,
-                ship_speed,
-                apos,
-                avel
+                ship_pos, ship_heading, ship_speed, apos, avel
             )
+            input_closure = np.clip((closure + 100) / 200, 0.0, 1.0)
 
-            # 4. distance
-            distance = math.hypot(apos[0] - ship_pos[0], apos[1] - ship_pos[1])
+            # 3. Radius
+            input_radius = np.clip((arad - 8) / 24, 0.0, 1.0)
 
-            # Input Scaling
-            closure = np.clip((closure + 100) / 200, 0.0, 1.0)
-            relative_heading = abs(relative_heading-1)  # Already 0 to 1
-            arad = np.clip((arad-8) / 24, 0.0, 1.0)
-            distance = np.clip(distance/(np.sqrt(map_height**2 + map_width**2)),0,1)  # Closer = higher input
+            # 4. Distance
+            dist_val = math.hypot(apos[0] - ship_pos[0], apos[1] - ship_pos[1])
+            input_distance = np.clip(dist_val / max_dist, 0.0, 1.0)
 
-           # 5. fuzzy output
-
-
-
-
-            
-
-            threat = fuzzy_tree_output(
-                self.chromosome,
-                relative_heading,
-                closure,
-                arad,
-                distance
-            )
-
-            if threat > highest_threat_value:
-                highest_threat_value = threat
-                highest_threat_index = i
+            inputs_batch[i, 0] = input_heading
+            inputs_batch[i, 1] = input_closure
+            inputs_batch[i, 2] = input_radius
+            inputs_batch[i, 3] = input_distance
 
         # ---------------------------------
-        # Aim at the highest-threat asteroid
+        # BATCH FUZZY EVALUATION
         # ---------------------------------
-        target = asteroids[highest_threat_index]
+        threat_scores = fuzzy_tree_output(self.chromosome, inputs_batch)
+
+        # ---------------------------------
+        # SELECTION & TARGETING
+        # ---------------------------------
+        best_idx = np.argmax(threat_scores)
+        target = viable_asteroids[best_idx]
+        
         target_pos = target["position"]
         target_vel = target["velocity"]
 
@@ -198,16 +162,16 @@ class FuzzyController(KesslerController):
         )
 
         # ---------------------------------
-        # Simple actions (you can evolve these later)
+        # ACTIONS
         # ---------------------------------
         thrust = 0.0
-        turn_rate = turn_angle
-
-        if on_target:
-            shoot = True
-        else:
-            shoot = False
+        
+        # SAFETY CHECK: Ensure turn_rate is finite
+        if not math.isfinite(turn_angle):
+            turn_angle = 0.0
             
+        turn_rate = turn_angle
+        shoot = on_target
         deploy_mine = False
 
         return thrust, turn_rate, shoot, deploy_mine
