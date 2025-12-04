@@ -20,13 +20,9 @@ class FuzzyController(KesslerController):
         self._name = "BajaBlasteroids"
         self.chromosome = chromosome
 
-        # Import print helpers
-        from algorithms import (
-            assign_fis_ids,
-            print_tree_structure,
-            print_membership_functions,
-            print_rule_constants
-        )
+        from algorithms import compile_chromosome
+        compile_chromosome(self.chromosome)
+
 
         # # Assign IDs for readability
         # assign_fis_ids(self.chromosome)
