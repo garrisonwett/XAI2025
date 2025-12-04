@@ -13,11 +13,12 @@ from scenarios import scenarios
 
 def get_ga_config():
     cfg = {
-        "popsize": 20,
-        "generations": 20,
+        "popsize": 30,
+        "generations": 50,
         "input_count": 4,
         "groups": [],
         "tournament_k": 3,
+        "max_hours": 6.0,  # stop after 3 hours
 
         "mf_mut_rate_start": 0.90,
         "mf_mut_rate_end":   0.02,
@@ -36,11 +37,11 @@ def get_ga_config():
 
         "structure_freeze_gen": 10,
 
-        "num_workers": 6,
+        "num_workers": 10,
 
         "scenario_name": "training2",
         "game_type": "TrainerEnvironment",
-        "episodes_per_eval": 2,
+        "episodes_per_eval": 1,
 
         # controller callback supplied by main_train.py
         "controller_callback": None
@@ -53,6 +54,75 @@ def linear_schedule(start, end, gen, total):
         return end
     return start + (end - start) * (gen / (total - 1))
 
+############################################################
+# READABLE TREE PRINTING
+############################################################
+
+def assign_fis_ids(root):
+    counter = [0]
+    def visit(node):
+        from algorithms import FISNode, InputNode
+        if isinstance(node, FISNode):
+            node.fis_id = counter[0]
+            counter[0] += 1
+            visit(node.left)
+            visit(node.right)
+        elif isinstance(node, InputNode):
+            pass
+    visit(root)
+
+
+def print_tree_structure(root, indent=0):
+    from algorithms import FISNode, InputNode
+    space = "  " * indent
+    if isinstance(root, InputNode):
+        print(f"{space}Input {root.index}")
+        return
+    if isinstance(root, FISNode):
+        label = f"FIS {getattr(root, 'fis_id', '?')}"
+        print(f"{space}{label}")
+        print_tree_structure(root.left, indent + 1)
+        print_tree_structure(root.right, indent + 1)
+
+
+def print_membership_functions(root):
+    from algorithms import FISNode
+    nodes = []
+    gather_fis_nodes(root, nodes)
+
+    print("\n===== Membership Functions =====")
+    for n in nodes:
+        fid = getattr(n, "fis_id", "?")
+        print(f"\nFIS {fid}:")
+        print(f"  medium1_center: {n.medium1_center:.3f}")
+        print(f"  medium2_center: {n.medium2_center:.3f}")
+        print("  Triangles:")
+        print(f"    Left (low, med, high):")
+        print(f"      (-0.2, 0.0, {n.medium1_center:.3f})")
+        print(f"      (0.0, {n.medium1_center:.3f}, 1.0)")
+        print(f"      ({n.medium1_center:.3f}, 1.0, 1.2)")
+        print(f"    Right (low, med, high):")
+        print(f"      (-0.2, 0.0, {n.medium2_center:.3f})")
+        print(f"      (0.0, {n.medium2_center:.3f}, 1.0)")
+        print(f"      ({n.medium2_center:.3f}, 1.0, 1.2)")
+
+
+def print_rule_constants(root):
+    from algorithms import FISNode
+    nodes = []
+    gather_fis_nodes(root, nodes)
+
+    print("\n===== Rule Constants =====")
+    for n in nodes:
+        fid = getattr(n, "fis_id", "?")
+        print(f"\nFIS {fid}:")
+        idx = 0
+        for _ in range(3):
+            row = []
+            for _ in range(3):
+                row.append(f"{n.rule_constants[idx]: .3f}")
+                idx += 1
+            print("  " + "  ".join(row))
 
 ############################################################
 # GAME SETTINGS (no controller)
@@ -326,6 +396,8 @@ def build_initial_tree(count, groups_sorted):
 # MAIN GA LOOP
 ############################################################
 
+import time
+
 def run_ga(cfg):
     popsize = cfg["popsize"]
     gens = cfg["generations"]
@@ -334,38 +406,76 @@ def run_ga(cfg):
     k = cfg["tournament_k"]
     freeze_gen = cfg["structure_freeze_gen"]
 
+    max_hours = cfg.get("max_hours", None)
+    max_seconds = max_hours * 3600 if max_hours is not None else None
+    ga_start_time = time.time()
+
     population = [build_initial_tree(count, groups) for _ in range(popsize)]
     best_history = []
 
+    total_times = {
+        "eval": 0.0,
+        "selection": 0.0,
+        "crossover": 0.0,
+        "mutation": 0.0,
+        "clone": 0.0,
+        "gen_total": 0.0,
+    }
+
     for gen in range(gens):
+
+        # Check time limit BEFORE starting a new generation
+        if max_seconds is not None:
+            elapsed = time.time() - ga_start_time
+            if elapsed >= max_seconds:
+                print("\nMax time reached. Stopping GA before starting generation", gen)
+                break
+
+        gen_start_time = time.time()
 
         mf_rate = linear_schedule(cfg["mf_mut_rate_start"], cfg["mf_mut_rate_end"], gen, gens)
         rule_rate = linear_schedule(cfg["rule_mut_rate_start"], cfg["rule_mut_rate_end"], gen, gens)
 
-        # No structure mutation or crossover for simplicity
         struct_mut_prob = 0.0
         struct_cross_prob = 0.0
         param_cross_prob = 0.5
 
+        # Evaluation timing
+        t0 = time.time()
         fitness_values = evaluate_population(population, cfg)
-        fit_dict = {id(ind): f for ind, f in zip(population, fitness_values)}
+        eval_time = time.time() - t0
+        total_times["eval"] += eval_time
 
+        fit_dict = {id(ind): f for ind, f in zip(population, fitness_values)}
         ranked = sorted(zip(fitness_values, population), key=lambda x: x[0])
         best_fit = ranked[0][0]
         best_history.append(best_fit)
 
         print("Gen", gen, "best", best_fit)
 
-        new_pop = [copy_tree(ranked[0][1])]
+        # Clone elite
+        t_clone_start = time.time()
+        elite = copy_tree(ranked[0][1])
+        clone_time = time.time() - t_clone_start
+        total_times["clone"] += clone_time
+
+        new_pop = [elite]
 
         while len(new_pop) < popsize:
+
+            # Selection timing
+            t_sel = time.time()
             p1 = tournament(population, fit_dict, k)
             p2 = tournament(population, fit_dict, k)
+            total_times["selection"] += (time.time() - t_sel)
 
+            t_clone2 = time.time()
             c1 = copy_tree(p1)
             c2 = copy_tree(p2)
+            total_times["clone"] += (time.time() - t_clone2)
 
-            # Parameter crossover
+            # Crossover timing
+            t_cross = time.time()
             if random.random() < param_cross_prob:
                 A = []
                 B = []
@@ -377,8 +487,10 @@ def run_ga(cfg):
                     na.medium1_center, nb.medium1_center = nb.medium1_center, na.medium1_center
                     na.medium2_center, nb.medium2_center = nb.medium2_center, na.medium2_center
                     na.rule_constants, nb.rule_constants = nb.rule_constants, na.rule_constants
+            total_times["crossover"] += (time.time() - t_cross)
 
-            # Mutation
+            # Mutation timing
+            t_mut = time.time()
             def mutate_params(node):
                 if isinstance(node, FISNode):
                     if random.random() < mf_rate:
@@ -395,6 +507,7 @@ def run_ga(cfg):
 
             mutate_params(c1)
             mutate_params(c2)
+            total_times["mutation"] += (time.time() - t_mut)
 
             clamp_mfs(c1)
             clamp_mfs(c2)
@@ -405,8 +518,40 @@ def run_ga(cfg):
 
         population = new_pop
 
-    fitness_values = evaluate_population(population, cfg)
+        gen_total = time.time() - gen_start_time
+        total_times["gen_total"] += gen_total
+
+        # Per generation timing
+        print(f"Generation {gen} timing:")
+        print(f"  eval:      {eval_time:.4f} sec")
+        print(f"  clone:     {clone_time:.4f} sec")
+        print(f"  gen total: {gen_total:.4f} sec")
+        print("")
+
+        # Check time limit AFTER finishing this generation
+        if max_seconds is not None:
+            elapsed = time.time() - ga_start_time
+            if elapsed >= max_seconds:
+                print("\nMax time reached. Ending GA after generation", gen)
+                break
+
+    # Final summary
+    grand_total = total_times["gen_total"]
+
+    print("\n===================================")
+    print("Overall GA Timing Breakdown")
+    print("===================================")
+
+    for key in ["eval", "selection", "crossover", "mutation", "clone"]:
+        sec = total_times[key]
+        pct = (sec / grand_total) * 100 if grand_total > 0 else 0
+        print(f"{key:10s}: {sec:8.4f} sec   ({pct:5.1f} percent)")
+
+    print(f"\ngrand total: {grand_total:.4f} sec\n")
+
+    # Return best solution found so far
     best_index = int(np.argmin(fitness_values))
     best = population[best_index]
     clamp_mfs(best)
     return best, best_history
+

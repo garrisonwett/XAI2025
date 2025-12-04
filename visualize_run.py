@@ -86,8 +86,8 @@ if __name__ == "__main__":
     initial_time = time.perf_counter()
 
     # Deterministic asteroid layout for consistent playback
-    gen = np.random.randint(0, 1000000)
-    selected_scenario = random_repeatable_frozen(gen)
+    # gen = np.random.randint(0, 1000000)
+    # selected_scenario = random_repeatable_frozen(gen)
 
     # Run game with the controller using the loaded chromosome
     score, perf_data = game.run(
