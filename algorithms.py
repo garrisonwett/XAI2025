@@ -3,6 +3,7 @@ import random
 import pickle
 import copy
 import time
+import datetime  # Added for timestamp
 from numba import njit, float64, int32, void
 
 # -----------------------------------------------------------------------------
@@ -31,12 +32,12 @@ def get_ga_config():
     Return a configuration dictionary for the GA.
     """
     cfg = {
-        "popsize": 2,
+        "popsize": 3,
         "generations": 2,
-        "input_count": 5,           # 5 Inputs
+        "input_count": 5,           # 5 Inputs (Heading, Closure, Radius, Dist, Collision)
         "groups": [],
         "tournament_k": 3,
-        "max_hours": 6.0,
+        "max_hours": 9.0,
 
         "mf_mut_rate_start": 0.90,
         "mf_mut_rate_end":   0.02,
@@ -252,15 +253,15 @@ def flatten_tree(root):
     node_type = np.zeros(n, dtype=np.int32)
     left = np.zeros(n, dtype=np.int32)
     right = np.zeros(n, dtype=np.int32)
-    
-    # Pre-calculated slopes for branchless math
-    m1_inv = np.zeros(n, dtype=np.float64)        # 1/c1
-    m1_inv_c = np.zeros(n, dtype=np.float64)      # 1/(1-c1)
-    
-    m2_inv = np.zeros(n, dtype=np.float64)        # 1/c2
-    m2_inv_c = np.zeros(n, dtype=np.float64)      # 1/(1-c2)
-    
+    m1 = np.zeros(n, dtype=np.float64)
+    m2 = np.zeros(n, dtype=np.float64)
     rules = np.zeros((n, 9), dtype=np.float64)
+    
+    # Slopes for optimization
+    m1_inv = np.zeros(n, dtype=np.float64)
+    m1_inv_c = np.zeros(n, dtype=np.float64)
+    m2_inv = np.zeros(n, dtype=np.float64)
+    m2_inv_c = np.zeros(n, dtype=np.float64)
 
     for i, node in enumerate(order):
         if isinstance(node, InputNode):
@@ -272,8 +273,6 @@ def flatten_tree(root):
             left[i] = index_map[node.left]
             right[i] = index_map[node.right]
             
-            # Pre-compute inverses to avoid division in the hot loop
-            # Avoid division by zero by clamping epsilon
             c1 = node.medium1_center
             if c1 < 1e-4: c1 = 1e-4
             if c1 > 0.9999: c1 = 0.9999
@@ -290,8 +289,6 @@ def flatten_tree(root):
             
             rules[i, :] = node.rule_constants
 
-    # Pre-calculate centers for reference if needed, but we mostly use slopes now
-    # We pack everything needed into the tuple
     return node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, rules
 
 # -----------------------------------------------------------------------
@@ -301,89 +298,57 @@ def flatten_tree(root):
 @njit(fastmath=True)
 def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, rules, inputs_batch):
     """
-    Evaluates the tree using Branchless Logic and Pre-computed Inverses.
-    This is designed to fit entirely in L1/L2 Cache and avoid pipeline stalls.
+    Evaluates the tree for MULTIPLE inputs at once.
+    Serial execution, optimized for single-core speed.
     """
     num_samples = inputs_batch.shape[0]
     num_nodes = node_type.shape[0]
     
-    # 1D flattened array for cache locality
-    # Index = k * num_nodes + i
+    # 1D array for cache efficiency
     total_size = num_samples * num_nodes
     node_outputs = np.empty(total_size, dtype=np.float64)
     
-    # We assume inputs are type 0 and come first in topological sort usually,
-    # but the general logic handles any order (post-order).
-    
     for k in range(num_samples):
-        # Cache offset for this sample
         k_offset = k * num_nodes
         
         for i in range(num_nodes):
             if node_type[i] == 0:
-                # Leaf Node
                 idx = left[i]
                 node_outputs[k_offset + i] = inputs_batch[k, idx]
             else:
-                # FIS Node
-                # Fetch children values
-                # Post-order guarantees children are already computed at lower indices
                 val_a = node_outputs[k_offset + left[i]]
                 val_b = node_outputs[k_offset + right[i]]
                 
-                # --- Branchless Fuzzification A ---
-                # Low: Triangle peak 0, ends at c1. (Uses precalc slope 5.0 for -0.2 start)
-                # Med: Triangle peak c1.
-                # High: Ramp start c1.
-                
-                # Slope lookup
+                # --- Fuzzification A ---
                 inv_c1 = m1_inv[i]
-                inv_c1_c = m1_inv_c[i]
                 
-                # Low Logic: max(0, min((val+0.2)*5, (c1-val)/c1)) -> (c1-val)*inv_c1 = 1 - val*inv_c1
-                # Simplified: low is 1 at 0, 0 at c1.
-                # Note: Original code had specific -0.2 logic. 
-                # (val + 0.2) * 5.0 handles the -0.2 to 0.0 ramp up.
-                # (1.0 - val_a * inv_c1) handles the 0.0 to c1 ramp down.
                 low1 = (val_a + 0.2) * 5.0
-                down_slope = 1.0 - (val_a * inv_c1)
-                if down_slope < low1: low1 = down_slope
+                down = 1.0 - (val_a * inv_c1)
+                if down < low1: low1 = down
                 if low1 < 0.0: low1 = 0.0
                 if low1 > 1.0: low1 = 1.0
 
-                # Med Logic: Triangle 0 -> c1 -> 1
                 up = val_a * inv_c1
-                down = (1.0 - val_a) * inv_c1_c
+                down = (1.0 - val_a) * m1_inv_c[i]
                 med1 = up
                 if down < med1: med1 = down
                 if med1 < 0.0: med1 = 0.0
-                # med1 doesn't exceed 1.0 mathematically if c1 in (0,1)
 
-                # High Logic: Ramp c1 -> 1
-                high1 = (val_a * inv_c1_c) - (inv_c1_c * (1.0 - 1.0/inv_c1_c)) # simpl: (val-c1)/(1-c1)
-                # Re-derivation: (val - c1) * inv_1_c1
-                # c1 is derived from inv: c1 = 1 / inv_c1? No, simpler to just use pre-calc.
-                # Let's use the standard form: (val_a * inv_c1_c) - (c1 * inv_c1_c) 
-                # We can approximate or just trust the logic:
-                # high = 1 - down_slope_of_med? Yes, exactly.
-                # High is just (1 - down_slope_of_med) clipped?
-                # Actually, (val - c1)/(1-c1) = 1 - (1-val)/(1-c1) = 1 - down
                 high1 = 1.0 - down
                 if high1 < 0.0: high1 = 0.0
                 if high1 > 1.0: high1 = 1.0
 
-                # --- Branchless Fuzzification B ---
+                # --- Fuzzification B ---
                 inv_c2 = m2_inv[i]
-                inv_c2_c = m2_inv_c[i]
                 
                 low2 = (val_b + 0.2) * 5.0
-                down_slope2 = 1.0 - (val_b * inv_c2)
-                if down_slope2 < low2: low2 = down_slope2
+                down2 = 1.0 - (val_b * inv_c2)
+                if down2 < low2: low2 = down2
                 if low2 < 0.0: low2 = 0.0
                 if low2 > 1.0: low2 = 1.0
 
                 up2 = val_b * inv_c2
-                down2 = (1.0 - val_b) * inv_c2_c
+                down2 = (1.0 - val_b) * m2_inv_c[i]
                 med2 = up2
                 if down2 < med2: med2 = down2
                 if med2 < 0.0: med2 = 0.0
@@ -392,71 +357,30 @@ def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, r
                 if high2 < 0.0: high2 = 0.0
                 if high2 > 1.0: high2 = 1.0
 
-                # --- Rule Evaluation (Manual Unroll + FMA) ---
-                # FMA = Fused Multiply Add (conceptually)
-                
+                # --- Rule Evaluation ---
                 num = 0.0
                 den = 0.0
                 
-                # 0: Low/Low
-                w = low1 * low2
-                num += w * rules[i, 0]
-                den += w
-                
-                # 1: Low/Med
-                w = low1 * med2
-                num += w * rules[i, 1]
-                den += w
-                
-                # 2: Low/High
-                w = low1 * high2
-                num += w * rules[i, 2]
-                den += w
-                
-                # 3: Med/Low
-                w = med1 * low2
-                num += w * rules[i, 3]
-                den += w
-                
-                # 4: Med/Med
-                w = med1 * med2
-                num += w * rules[i, 4]
-                den += w
-                
-                # 5: Med/High
-                w = med1 * high2
-                num += w * rules[i, 5]
-                den += w
-                
-                # 6: High/Low
-                w = high1 * low2
-                num += w * rules[i, 6]
-                den += w
-                
-                # 7: High/Med
-                w = high1 * med2
-                num += w * rules[i, 7]
-                den += w
-                
-                # 8: High/High
-                w = high1 * high2
-                num += w * rules[i, 8]
-                den += w
+                w = low1 * low2; num += w * rules[i, 0]; den += w
+                w = low1 * med2; num += w * rules[i, 1]; den += w
+                w = low1 * high2; num += w * rules[i, 2]; den += w
+                w = med1 * low2; num += w * rules[i, 3]; den += w
+                w = med1 * med2; num += w * rules[i, 4]; den += w
+                w = med1 * high2; num += w * rules[i, 5]; den += w
+                w = high1 * low2; num += w * rules[i, 6]; den += w
+                w = high1 * med2; num += w * rules[i, 7]; den += w
+                w = high1 * high2; num += w * rules[i, 8]; den += w
 
-                # Final Division & Clamp
                 val = 0.0
                 if den > 1e-9:
                     val = num / den
-                
+
                 if val > 1.0: val = 1.0
                 elif val < 0.0: val = 0.0
                 
                 node_outputs[k_offset + i] = val
 
-    # Return only the root node (last index) for each sample
-    # The root is at index (num_nodes - 1)
-    # Stride is num_nodes
-    # Output array size: num_samples
+    # Gather results
     final_output = np.empty(num_samples, dtype=np.float64)
     for k in range(num_samples):
         final_output[k] = node_outputs[k * num_nodes + (num_nodes - 1)]
@@ -465,7 +389,6 @@ def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, r
 
 
 def compile_chromosome(chrom):
-    # Packs the flat representation with the pre-calculated inverses
     nt, le, ri, m1i, m1ic, m2i, m2ic, rl = flatten_tree(chrom)
     chrom._flat_repr = (nt, le, ri, m1i, m1ic, m2i, m2ic, rl)
     pass
@@ -532,7 +455,7 @@ game_settings = {
 
 def kessler_score_to_scalar(score):
     t = score.teams[0]
-    return (t.asteroids_hit*t.accuracy) - 20 * t.deaths
+    return (t.asteroids_hit) - 20 * t.deaths
 
 def fitness(ind, cfg, controller_callback):
     scenario = scenarios[cfg["scenario_name"]]
@@ -669,6 +592,21 @@ def run_ga(cfg):
                 new_pop.append(c2)
 
         population = new_pop
+
+    ga_end_time = time.time()
+    total_duration = ga_end_time - ga_start_time
+    finish_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    print("\n" + "="*60)
+    print("GA TRAINING COMPLETE")
+    print("="*60)
+    print(f"Finished at:    {finish_time_str}")
+    print(f"Total Runtime:  {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
+    print("-" * 60)
+    print("Parameters Used:")
+    for key, value in cfg.items():
+        print(f"  {key:<25}: {value}")
+    print("="*60 + "\n")
 
     best_index = int(np.argmin(fitness_values))
     return population[best_index], best_history
