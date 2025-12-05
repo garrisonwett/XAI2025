@@ -31,8 +31,8 @@ def get_ga_config():
     Return a configuration dictionary for the GA.
     """
     cfg = {
-        "popsize": 50,
-        "generations": 50,
+        "popsize": 2,
+        "generations": 2,
         "input_count": 5,           # 5 Inputs
         "groups": [],
         "tournament_k": 3,
