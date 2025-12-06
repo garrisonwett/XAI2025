@@ -258,8 +258,52 @@ class FuzzyController(KesslerController):
             extra_tolerance=aim_tolerance
         )
 
-        thrust = 0.0
+
         
+        # ###############
+        # # THROTTLE LOGIC
+        thrust = 0.0
+
+        # Simple Proximity Avoidance (Accounting for toroidal map wrapping using copysign)
+        closest_dist = float('inf')
+        closest_rel_pos = None # Vector pointing to the asteroid relative to ship
+
+        for a in viable_asteroids:
+            a_pos = a["position"]
+            dx = a_pos[0] - ship_pos[0]
+            dy = a_pos[1] - ship_pos[1]
+
+            # Warp helper logic: shortest path across toroidal boundary
+            if abs(dx) > map_width / 2:
+                dx -= math.copysign(map_width, dx)
+            if abs(dy) > map_height / 2:
+                dy -= math.copysign(map_height, dy)
+
+            d = math.hypot(dx, dy)
+
+            if d < closest_dist:
+                closest_dist = d
+                closest_rel_pos = np.array([dx, dy])
+
+        # If the closest asteroid is within 200 units, take evasive action
+        if closest_rel_pos is not None and closest_dist < 200.0:
+            # Calculate ship direction vector from heading
+            rad = math.radians(ship_heading)
+            ship_dir = np.array([math.cos(rad), math.sin(rad)])
+            
+            # Check if asteroid is in front (dot product > 0) or behind
+            # closest_rel_pos is the vector pointing FROM ship TO asteroid
+            if np.dot(closest_rel_pos, ship_dir) > 0:
+                thrust = -480.0 * min(1, 50/closest_dist)  # Reverse away from danger
+            else:
+                thrust = 480.0 * min(1, 50/closest_dist)  # Accelerate away from danger
+
+
+
+
+
+
+
         if not math.isfinite(turn_angle):
             turn_angle = 0.0
             
@@ -272,3 +316,4 @@ class FuzzyController(KesslerController):
             self.locked_target = None
 
         return thrust, turn_rate, shoot, deploy_mine
+    

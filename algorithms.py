@@ -3,7 +3,7 @@ import random
 import pickle
 import copy
 import time
-import datetime  # Added for timestamp
+import datetime
 from numba import njit, float64, int32, void
 
 # -----------------------------------------------------------------------------
@@ -18,8 +18,7 @@ def print_tree(node, indent=0):
 
     if isinstance(node, FISNode):
         print(f"{pad}FISNode(")
-        print(f"{pad}  medium1_center={node.medium1_center:.3f}")
-        print(f"{pad}  medium2_center={node.medium2_center:.3f}")
+        print(f"{pad}  c1={node.medium1_center:.3f}, c2={node.medium2_center:.3f}")
         print(f"{pad}  left=")
         print_tree(node.left, indent + 4)
         print(f"{pad}  right=")
@@ -28,13 +27,10 @@ def print_tree(node, indent=0):
 
 
 def get_ga_config():
-    """
-    Return a configuration dictionary for the GA.
-    """
     cfg = {
-        "popsize": 3,
-        "generations": 2,
-        "input_count": 5,           # 5 Inputs (Heading, Closure, Radius, Dist, Collision)
+        "popsize": 50,
+        "generations": 100,
+        "input_count": 5,           # 5 Inputs
         "groups": [],
         "tournament_k": 3,
         "max_hours": 9.0,
@@ -86,6 +82,8 @@ class InputNode:
 
 class FISNode:
     def __init__(self):
+        # Centers of the "Medium" triangle. 
+        # Low is always (-inf to c), High is always (c to inf).
         self.medium1_center = random.uniform(0.2, 0.8)
         self.medium2_center = random.uniform(0.2, 0.8)
         self.rule_constants = [random.uniform(-1, 1) for _ in range(9)]
@@ -127,8 +125,8 @@ def clamp_mfs(node):
     while stack:
         n = stack.pop()
         if isinstance(n, FISNode):
-            n.medium1_center = min(max(n.medium1_center, 0.0), 1.0)
-            n.medium2_center = min(max(n.medium2_center, 0.0), 1.0)
+            n.medium1_center = min(max(n.medium1_center, 0.01), 0.99)
+            n.medium2_center = min(max(n.medium2_center, 0.01), 0.99)
             if n.left:
                 stack.append(n.left)
             if n.right:
@@ -232,7 +230,6 @@ def build_initial_tree(count, groups_sorted):
 # -----------------------------------------------------------------------------
 
 def flatten_tree(root):
-    # Standard flattening into arrays
     order = []
     stack = [(root, False)]
     while stack:
@@ -253,15 +250,15 @@ def flatten_tree(root):
     node_type = np.zeros(n, dtype=np.int32)
     left = np.zeros(n, dtype=np.int32)
     right = np.zeros(n, dtype=np.int32)
-    m1 = np.zeros(n, dtype=np.float64)
-    m2 = np.zeros(n, dtype=np.float64)
-    rules = np.zeros((n, 9), dtype=np.float64)
     
-    # Slopes for optimization
-    m1_inv = np.zeros(n, dtype=np.float64)
-    m1_inv_c = np.zeros(n, dtype=np.float64)
-    m2_inv = np.zeros(n, dtype=np.float64)
-    m2_inv_c = np.zeros(n, dtype=np.float64)
+    # Pre-calculated inverses for Partition of Unity
+    m1_inv = np.zeros(n, dtype=np.float64)        # 1/c1
+    m1_inv_c = np.zeros(n, dtype=np.float64)      # 1/(1-c1)
+    
+    m2_inv = np.zeros(n, dtype=np.float64)        # 1/c2
+    m2_inv_c = np.zeros(n, dtype=np.float64)      # 1/(1-c2)
+    
+    rules = np.zeros((n, 9), dtype=np.float64)
 
     for i, node in enumerate(order):
         if isinstance(node, InputNode):
@@ -274,13 +271,9 @@ def flatten_tree(root):
             right[i] = index_map[node.right]
             
             c1 = node.medium1_center
-            if c1 < 1e-4: c1 = 1e-4
-            if c1 > 0.9999: c1 = 0.9999
-            
             c2 = node.medium2_center
-            if c2 < 1e-4: c2 = 1e-4
-            if c2 > 0.9999: c2 = 0.9999
             
+            # Pre-compute inverses
             m1_inv[i] = 1.0 / c1
             m1_inv_c[i] = 1.0 / (1.0 - c1)
             
@@ -292,19 +285,19 @@ def flatten_tree(root):
     return node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, rules
 
 # -----------------------------------------------------------------------
-# OPTIMIZATION: BATCH PROCESSING (SERIAL OPTIMIZED)
+# OPTIMIZATION: BATCH PROCESSING (PARTITION OF UNITY)
 # -----------------------------------------------------------------------
 
 @njit(fastmath=True)
 def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, rules, inputs_batch):
     """
-    Evaluates the tree for MULTIPLE inputs at once.
-    Serial execution, optimized for single-core speed.
+    Evaluates the Fuzzy Tree using Partition of Unity optimization.
+    Assumption: Low + Med + High = 1.0.
+    Benefit: No division, minimal multiplication.
     """
     num_samples = inputs_batch.shape[0]
     num_nodes = node_type.shape[0]
     
-    # 1D array for cache efficiency
     total_size = num_samples * num_nodes
     node_outputs = np.empty(total_size, dtype=np.float64)
     
@@ -319,68 +312,57 @@ def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, r
                 val_a = node_outputs[k_offset + left[i]]
                 val_b = node_outputs[k_offset + right[i]]
                 
-                # --- Fuzzification A ---
-                inv_c1 = m1_inv[i]
+                # --- FAST FUZZIFICATION A ---
+                # We calculate High and Low. Med is remainder.
                 
-                low1 = (val_a + 0.2) * 5.0
-                down = 1.0 - (val_a * inv_c1)
-                if down < low1: low1 = down
-                if low1 < 0.0: low1 = 0.0
-                if low1 > 1.0: low1 = 1.0
-
-                up = val_a * inv_c1
-                down = (1.0 - val_a) * m1_inv_c[i]
-                med1 = up
-                if down < med1: med1 = down
-                if med1 < 0.0: med1 = 0.0
-
-                high1 = 1.0 - down
-                if high1 < 0.0: high1 = 0.0
-                if high1 > 1.0: high1 = 1.0
-
-                # --- Fuzzification B ---
-                inv_c2 = m2_inv[i]
+                # Low A: 1.0 at 0, 0.0 at c1. (Linear drop)
+                # Formula: 1 - (val / c1) = 1 - val * inv
+                low_a = 1.0 - (val_a * m1_inv[i])
                 
-                low2 = (val_b + 0.2) * 5.0
-                down2 = 1.0 - (val_b * inv_c2)
-                if down2 < low2: low2 = down2
-                if low2 < 0.0: low2 = 0.0
-                if low2 > 1.0: low2 = 1.0
-
-                up2 = val_b * inv_c2
-                down2 = (1.0 - val_b) * m2_inv_c[i]
-                med2 = up2
-                if down2 < med2: med2 = down2
-                if med2 < 0.0: med2 = 0.0
-
-                high2 = 1.0 - down2
-                if high2 < 0.0: high2 = 0.0
-                if high2 > 1.0: high2 = 1.0
-
-                # --- Rule Evaluation ---
-                num = 0.0
-                den = 0.0
+                # High A: 0.0 at c1, 1.0 at 1. (Linear rise)
+                # Formula: (val - c1) / (1 - c1) = (val * inv_c) - (c1 * inv_c)
+                # Simpler: 1 - (1-val)/(1-c1) = 1 - (1-val)*inv_c
+                high_a = 1.0 - ((1.0 - val_a) * m1_inv_c[i])
                 
-                w = low1 * low2; num += w * rules[i, 0]; den += w
-                w = low1 * med2; num += w * rules[i, 1]; den += w
-                w = low1 * high2; num += w * rules[i, 2]; den += w
-                w = med1 * low2; num += w * rules[i, 3]; den += w
-                w = med1 * med2; num += w * rules[i, 4]; den += w
-                w = med1 * high2; num += w * rules[i, 5]; den += w
-                w = high1 * low2; num += w * rules[i, 6]; den += w
-                w = high1 * med2; num += w * rules[i, 7]; den += w
-                w = high1 * high2; num += w * rules[i, 8]; den += w
-
-                val = 0.0
-                if den > 1e-9:
-                    val = num / den
-
-                if val > 1.0: val = 1.0
-                elif val < 0.0: val = 0.0
+                # Branchless Clamp
+                if low_a < 0.0: low_a = 0.0
+                if high_a < 0.0: high_a = 0.0
                 
-                node_outputs[k_offset + i] = val
+                # Partition of Unity: Med is whatever is left
+                med_a = 1.0 - low_a - high_a
+                if med_a < 0.0: med_a = 0.0 # Float error safety
 
-    # Gather results
+                # --- FAST FUZZIFICATION B ---
+                low_b = 1.0 - (val_b * m2_inv[i])
+                high_b = 1.0 - ((1.0 - val_b) * m2_inv_c[i])
+                
+                if low_b < 0.0: low_b = 0.0
+                if high_b < 0.0: high_b = 0.0
+                
+                med_b = 1.0 - low_b - high_b
+                if med_b < 0.0: med_b = 0.0
+
+                # --- FACTORED RULE EVALUATION ---
+                # Original: Sum( w_ij * R_ij ) / Sum( w_ij )
+                # Optimization 1: Sum( w_ij ) is always 1.0 due to Partition of Unity.
+                # Optimization 2: Factor out terms.
+                # Output = LowA * (Sum of LowA Rules) + MedA * (Sum MedA Rules) ...
+                
+                # Pre-sum rules weighted by B (Inner Loop)
+                # Row 0 (Low A interacting with B)
+                r_low_a = (low_b * rules[i, 0]) + (med_b * rules[i, 1]) + (high_b * rules[i, 2])
+                
+                # Row 1 (Med A interacting with B)
+                r_med_a = (low_b * rules[i, 3]) + (med_b * rules[i, 4]) + (high_b * rules[i, 5])
+                
+                # Row 2 (High A interacting with B)
+                r_high_a = (low_b * rules[i, 6]) + (med_b * rules[i, 7]) + (high_b * rules[i, 8])
+                
+                # Final Sum
+                output = (low_a * r_low_a) + (med_a * r_med_a) + (high_a * r_high_a)
+                
+                node_outputs[k_offset + i] = output
+
     final_output = np.empty(num_samples, dtype=np.float64)
     for k in range(num_samples):
         final_output[k] = node_outputs[k * num_nodes + (num_nodes - 1)]
@@ -453,9 +435,10 @@ game_settings = {
     "time_limit": 120.0,
 }
 
-def kessler_score_to_scalar(score):
+def kessler_score_to_scalar(score, info):
     t = score.teams[0]
-    return (t.asteroids_hit) - 20 * t.deaths
+
+    return (t.asteroids_hit * t.accuracy) - 20 * t.deaths 
 
 def fitness(ind, cfg, controller_callback):
     scenario = scenarios[cfg["scenario_name"]]
@@ -465,8 +448,8 @@ def fitness(ind, cfg, controller_callback):
     for _ in range(episodes):
         game = TrainerEnvironment(settings=game_settings)
         controller = controller_callback(ind)
-        score, _ = game.run(scenario=scenario, controllers=[controller])
-        total += kessler_score_to_scalar(score)
+        score, info = game.run(scenario=scenario, controllers=[controller])
+        total += kessler_score_to_scalar(score, info)
 
     return -total / episodes
 
@@ -501,7 +484,7 @@ def tournament(pop, fit_dict, k):
 # -----------------------------------------------------------------------------
 
 def run_ga(cfg):
-    print("Starting GA with optimized Numba evaluation...")
+    print("Starting GA with FAST FUZZY evaluation (Partition of Unity)...")
     popsize = cfg["popsize"]
     gens = cfg["generations"]
     groups = [sorted(g) for g in cfg["groups"]]
@@ -598,7 +581,7 @@ def run_ga(cfg):
     finish_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print("\n" + "="*60)
-    print("GA TRAINING COMPLETE")
+    print("GA TRAINING COMPLETE (Fast Fuzzy)")
     print("="*60)
     print(f"Finished at:    {finish_time_str}")
     print(f"Total Runtime:  {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")

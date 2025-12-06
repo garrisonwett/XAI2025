@@ -3,15 +3,17 @@ import os
 import sys
 import numpy as np
 import time
+import pandas as pd  # Added for data analysis
 
 from kesslergame import GraphicsType, KesslerGame, Scenario, TrainerEnvironment
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# these imports are specific to your project structure
 from redone_controller import FuzzyController
 from scenarios import scenarios, random_repeatable_frozen
 from utils import LoggerUtility, LoggingLevel
-from algorithms import load_chromosome   # <-- now the GA tree loads correctly
+from algorithms import load_chromosome
 
 # Set up the logger
 logger = LoggerUtility(LoggingLevel.DEBUG).get_logger()
@@ -95,11 +97,33 @@ if __name__ == "__main__":
         controllers=[FuzzyController(chromosome)]
     )
 
-    
-
     print("Total scenario eval time:", time.perf_counter() - initial_time)
     print("Stop reason:", score.stop_reason)
     print("Asteroids hit:", [team.asteroids_hit for team in score.teams])
     print("Deaths:", [team.deaths for team in score.teams])
     print("Accuracy:", [team.accuracy for team in score.teams])
     print("Mean eval time:", [team.mean_eval_time for team in score.teams])
+
+    # --- PERFORMANCE DATA PARSING ---
+    if perf_data:
+        print("\n--- Performance Data Analysis ---")
+        
+        # 1. Convert to DataFrame
+        df = pd.DataFrame(perf_data)
+        df['frame'] = df.index
+
+        # 2. Extract Controller Times
+        # Safely handle cases where controller_times might be empty or missing
+        if 'controller_times' in df.columns and len(df) > 0:
+            controller_data = pd.DataFrame(df['controller_times'].tolist())
+            # Rename columns to Ship 1, Ship 2, etc.
+            controller_data.columns = [f'Ship {i+1}' for i in range(controller_data.shape[1])]
+            controller_data['frame'] = df.index
+            
+            print("\nController Execution Times (ms):")
+            # Multiply by 1000 for readable ms values
+            print((controller_data.drop('frame', axis=1) * 1000).head())
+            print(f"Avg Controller Time: {(df['total_controller_time'].mean() * 1000):.3f} ms")
+
+        print("\nFrame Performance Breakdown (Head):")
+        print(df[['frame', 'physics_update', 'graphics_draw', 'total_frame_time']].head())
