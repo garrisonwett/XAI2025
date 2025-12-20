@@ -46,7 +46,7 @@ if __name__ == "__main__":
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="training2",
+        default="training1",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
 

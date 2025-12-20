@@ -23,6 +23,8 @@ class FuzzyController(KesslerController):
         
         # State variable for target locking
         self.locked_target = None
+        # NEW: Counter for how long we've held a lock
+        self.lock_duration = 0
 
     @property
     def name(self):
@@ -60,6 +62,7 @@ class FuzzyController(KesslerController):
         # If no asteroids, sit still and don't shoot
         if not asteroids:
             self.locked_target = None
+            self.lock_duration = 0 # NEW: Reset duration
             return 0.0, 0.0, False, False
 
         # ---------------------------------
@@ -133,12 +136,19 @@ class FuzzyController(KesslerController):
         
         if not viable_asteroids:
              self.locked_target = None
+             self.lock_duration = 0 # NEW: Reset duration
              return 0.0, 0.0, False, False
 
         # ---------------------------------
         # TARGET LOCKING LOGIC
         # ---------------------------------
         target = None
+
+        # NEW: Check if lock duration has exceeded 4 timesteps
+        # If so, force a drop before we even try to maintain it.
+        if self.locked_target is not None and self.lock_duration >= 4:
+            self.locked_target = None
+            self.lock_duration = 0
         
         # 1. Try to maintain the existing lock
         if self.locked_target is not None:
@@ -155,14 +165,20 @@ class FuzzyController(KesslerController):
             
             if closest_match is not None and closest_dist < 100.0:
                 target = closest_match
+                # NEW: Increment duration since we maintained the lock
+                self.lock_duration += 1
             else:
                 self.locked_target = None
+                self.lock_duration = 0 # NEW: Reset on lost lock
 
-        # 2. If we don't have a lock, calculate new target
+        # 2. If we don't have a lock (or just dropped it due to expiry/loss), calculate new target
         if target is None:
+            # NEW: Reset duration because we are picking a brand new target
+            self.lock_duration = 0
+
             # BATCH INPUT CALCULATION (NOW 5 INPUTS)
             num_asteroids = len(viable_asteroids)
-            inputs_batch = np.zeros((num_asteroids, 5), dtype=np.float64) # <--- SIZE 5
+            inputs_batch = np.zeros((num_asteroids, 5), dtype=np.float64) 
             max_dist = math.sqrt(map_width**2 + map_height**2)
 
             ship_vel_np = np.array(ship_vel)
@@ -188,8 +204,7 @@ class FuzzyController(KesslerController):
                 dist_val = math.hypot(apos[0] - ship_pos[0], apos[1] - ship_pos[1])
                 input_distance = np.clip(dist_val / max_dist, 0.0, 1.0)
 
-                # 5. Collision Threat (NEW INPUT)
-                # Calculates time until asteroid hits ship
+                # 5. Collision Threat
                 rel_pos = np.array(apos) - np.array(ship_pos)
                 rel_vel = np.array(avel) - ship_vel_np
                 
@@ -198,14 +213,6 @@ class FuzzyController(KesslerController):
                 input_collision = 0.0
                 
                 if v_dot_v < 0: # Negative dot product means closing distance
-                    # Time to closest approach
-                    # t = - (r . v) / (v . v)
-                    # Note: Since we check v_dot_v < 0 (closing), we actually want to divide by speed^2 (norm)
-                    # which is v_dot_v. But dot product of closing vectors is negative?
-                    # Let's check math: 
-                    # Closest approach time t = -(P . V) / |V|^2
-                    # If P points to Asteroid, V is Ast_Vel relative to Ship.
-                    # If V is towards Ship, P . V is negative. -(neg) is positive. Correct.
                     
                     speed_sq = np.dot(rel_vel, rel_vel)
                     if speed_sq > 0:
@@ -214,17 +221,14 @@ class FuzzyController(KesslerController):
                         if t_closest > 0:
                             dist_at_t = np.linalg.norm(rel_pos + rel_vel * t_closest)
                             
-                            # If it passes within collision radius + small buffer
                             if dist_at_t < (ship_radius + arad + 5.0):
-                                 # Normalize Time: 0s = 1.0 (Danger), 10s = 0.0 (Safe)
-                                 # 10 seconds is a reasonable "panic" horizon
                                  input_collision = np.clip((10.0 - t_closest) / 10.0, 0.0, 1.0)
 
                 inputs_batch[i, 0] = input_heading
                 inputs_batch[i, 1] = input_closure
                 inputs_batch[i, 2] = input_radius
                 inputs_batch[i, 3] = input_distance
-                inputs_batch[i, 4] = input_collision  # <--- ASSIGN NEW INPUT
+                inputs_batch[i, 4] = input_collision 
 
             # Batch Fuzzy Eval
             threat_scores = fuzzy_tree_output(self.chromosome, inputs_batch)
@@ -258,26 +262,24 @@ class FuzzyController(KesslerController):
             extra_tolerance=aim_tolerance
         )
 
-
-        
         # ###############
         # # THROTTLE LOGIC
         thrust = 0.0
 
-        # Simple Proximity Avoidance (Accounting for toroidal map wrapping using copysign)
+        # Simple Proximity Avoidance (Accounting for toroidal map wrapping using vm helper)
         closest_dist = float('inf')
         closest_rel_pos = None # Vector pointing to the asteroid relative to ship
 
-        for a in viable_asteroids:
-            a_pos = a["position"]
-            dx = a_pos[0] - ship_pos[0]
-            dy = a_pos[1] - ship_pos[1]
+        # Use all asteroids for avoidance calculations
+        asteroid_positions = [a["position"] for a in asteroids]
+        
+        # vm.game_to_ship_frame returns relative (dx, dy) tuples adjusted for wrapping
+        relative_positions = vm.game_to_ship_frame(ship_pos, asteroid_positions, game_state["map_size"])
 
-            # Warp helper logic: shortest path across toroidal boundary
-            if abs(dx) > map_width / 2:
-                dx -= math.copysign(map_width, dx)
-            if abs(dy) > map_height / 2:
-                dy -= math.copysign(map_height, dy)
+        for rel_pos in relative_positions:
+            # rel_pos is ALREADY the vector from ship to asteroid (dx, dy)
+            dx = rel_pos[0]
+            dy = rel_pos[1]
 
             d = math.hypot(dx, dy)
 
@@ -285,25 +287,20 @@ class FuzzyController(KesslerController):
                 closest_dist = d
                 closest_rel_pos = np.array([dx, dy])
 
-        # If the closest asteroid is within 200 units, take evasive action
-        if closest_rel_pos is not None and closest_dist < 200.0:
+        # If the closest asteroid is within 400 units, take evasive action
+        if closest_rel_pos is not None and closest_dist < 400.0:
             # Calculate ship direction vector from heading
             rad = math.radians(ship_heading)
             ship_dir = np.array([math.cos(rad), math.sin(rad)])
             
             # Check if asteroid is in front (dot product > 0) or behind
-            # closest_rel_pos is the vector pointing FROM ship TO asteroid
+            scale_factor = min(1.0, 50.0 / max(closest_dist, 0.01))
+            
             if np.dot(closest_rel_pos, ship_dir) > 0:
-                thrust = -480.0 * min(1, 50/closest_dist)  # Reverse away from danger
+                thrust = -480.0 * scale_factor  # Reverse away from danger
             else:
-                thrust = 480.0 * min(1, 50/closest_dist)  # Accelerate away from danger
-
-
-
-
-
-
-
+                thrust = 480.0 * scale_factor   # Accelerate away from danger
+        thrust = 0
         if not math.isfinite(turn_angle):
             turn_angle = 0.0
             
@@ -314,6 +311,6 @@ class FuzzyController(KesslerController):
         # Unlock after shooting so we can re-evaluate targets
         if shoot:
             self.locked_target = None
+            self.lock_duration = 0 # NEW: Reset duration after shooting
 
         return thrust, turn_rate, shoot, deploy_mine
-    

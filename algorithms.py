@@ -29,7 +29,7 @@ def print_tree(node, indent=0):
 def get_ga_config():
     cfg = {
         "popsize": 50,
-        "generations": 100,
+        "generations": 150,
         "input_count": 5,           # 5 Inputs
         "groups": [],
         "tournament_k": 3,
