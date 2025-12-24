@@ -28,27 +28,29 @@ def print_tree(node, indent=0):
 
 def get_ga_config():
     cfg = {
-        "popsize": 50,
+        "popsize": 10,
         "generations": 150,
-        "input_count": 5,           # 5 Inputs
+        "input_count": 5,           # 5 Inputs. STRICTLY ENFORCED.
         "groups": [],
         "tournament_k": 3,
-        "max_hours": 9.0,
+        "max_hours": 0.03,
 
-        "mf_mut_rate_start": 0.90,
+        # Parameter Mutation Rates
+        "mf_mut_rate_start": 0.50,
         "mf_mut_rate_end":   0.02,
 
-        "rule_mut_rate_start": 0.90,
+        "rule_mut_rate_start": 0.50,
         "rule_mut_rate_end":   0.02,
 
-        "struct_mut_prob_start": 0.90,
+        # Structural Mutation Probabilities 
+        "struct_mut_prob_start": 0.60, 
         "struct_mut_prob_end":   0.10,
 
         "param_cross_prob_start": 0.80,
         "param_cross_prob_end":   0.50,
 
-        "struct_cross_prob_start": 1.00,
-        "struct_cross_prob_end":   0.80,
+        "struct_cross_prob_start": 0.0, 
+        "struct_cross_prob_end":   0.0,
 
         "structure_freeze_gen": 10,
 
@@ -78,12 +80,14 @@ class InputNode:
         self.index = idx
         self.left = None
         self.right = None
+    
+    # Adding string repr for easier debugging
+    def __repr__(self):
+        return f"InputNode({self.index})"
 
 
 class FISNode:
     def __init__(self):
-        # Centers of the "Medium" triangle. 
-        # Low is always (-inf to c), High is always (c to inf).
         self.medium1_center = random.uniform(0.2, 0.8)
         self.medium2_center = random.uniform(0.2, 0.8)
         self.rule_constants = [random.uniform(-1, 1) for _ in range(9)]
@@ -96,6 +100,10 @@ class FISNode:
 # -----------------------------------------------------------------------------
 
 def gather_leaves(node, lst):
+    """
+    Returns a list of integer INDICES. 
+    Used by main_train.py for visualization/compatibility.
+    """
     stack = [node]
     while stack:
         n = stack.pop()
@@ -107,6 +115,21 @@ def gather_leaves(node, lst):
             if n.left is not None:
                 stack.append(n.left)
 
+def gather_leaf_nodes(node, lst):
+    """
+    Returns a list of InputNode OBJECTS.
+    Used internally for mutation logic.
+    """
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, InputNode):
+            lst.append(n)
+        else:
+            if n.right is not None:
+                stack.append(n.right)
+            if n.left is not None:
+                stack.append(n.left)
 
 def gather_fis_nodes(node, lst):
     stack = [node]
@@ -182,8 +205,12 @@ def random_full_tree_with_leaves(indices):
     nodes = leaves[:]
 
     while len(nodes) > 1:
-        a = nodes.pop(random.randrange(len(nodes)))
-        b = nodes.pop(random.randrange(len(nodes)))
+        idx_a = random.randrange(len(nodes))
+        a = nodes.pop(idx_a)
+        
+        idx_b = random.randrange(len(nodes))
+        b = nodes.pop(idx_b)
+        
         parent = FISNode()
         parent.left = a
         parent.right = b
@@ -193,25 +220,27 @@ def random_full_tree_with_leaves(indices):
     clamp_mfs(root)
     return root
 
-
-def validate_tree(root, input_count):
-    leafs = []
-    gather_leaves(root, leafs)
-    return sorted(leafs) == list(range(input_count))
-
-
 def build_initial_tree(count, groups_sorted):
     all_inputs = list(range(count))
-    grouped = set(sum(groups_sorted, []))
-    free = [i for i in all_inputs if i not in grouped]
-
+    used = set()
+    
     subs = []
+    
     for g in groups_sorted:
-        subs.append(random_full_tree_with_leaves(g))
+        valid_g = [x for x in g if x < count and x not in used]
+        if valid_g:
+            subs.append(random_full_tree_with_leaves(valid_g))
+            for x in valid_g: used.add(x)
+            
+    free = [i for i in all_inputs if i not in used]
+    
     if free:
         subs.append(random_full_tree_with_leaves(free))
 
     nodes = subs[:]
+    if not nodes:
+        return random_full_tree_with_leaves(all_inputs)
+
     while len(nodes) > 1:
         a = nodes.pop(random.randrange(len(nodes)))
         b = nodes.pop(random.randrange(len(nodes)))
@@ -251,12 +280,11 @@ def flatten_tree(root):
     left = np.zeros(n, dtype=np.int32)
     right = np.zeros(n, dtype=np.int32)
     
-    # Pre-calculated inverses for Partition of Unity
-    m1_inv = np.zeros(n, dtype=np.float64)        # 1/c1
-    m1_inv_c = np.zeros(n, dtype=np.float64)      # 1/(1-c1)
+    m1_inv = np.zeros(n, dtype=np.float64)        
+    m1_inv_c = np.zeros(n, dtype=np.float64)      
     
-    m2_inv = np.zeros(n, dtype=np.float64)        # 1/c2
-    m2_inv_c = np.zeros(n, dtype=np.float64)      # 1/(1-c2)
+    m2_inv = np.zeros(n, dtype=np.float64)        
+    m2_inv_c = np.zeros(n, dtype=np.float64)      
     
     rules = np.zeros((n, 9), dtype=np.float64)
 
@@ -273,7 +301,11 @@ def flatten_tree(root):
             c1 = node.medium1_center
             c2 = node.medium2_center
             
-            # Pre-compute inverses
+            if c1 < 0.001: c1 = 0.001
+            if c1 > 0.999: c1 = 0.999
+            if c2 < 0.001: c2 = 0.001
+            if c2 > 0.999: c2 = 0.999
+
             m1_inv[i] = 1.0 / c1
             m1_inv_c[i] = 1.0 / (1.0 - c1)
             
@@ -284,17 +316,9 @@ def flatten_tree(root):
 
     return node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, rules
 
-# -----------------------------------------------------------------------
-# OPTIMIZATION: BATCH PROCESSING (PARTITION OF UNITY)
-# -----------------------------------------------------------------------
 
 @njit(fastmath=True)
 def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, rules, inputs_batch):
-    """
-    Evaluates the Fuzzy Tree using Partition of Unity optimization.
-    Assumption: Low + Med + High = 1.0.
-    Benefit: No division, minimal multiplication.
-    """
     num_samples = inputs_batch.shape[0]
     num_nodes = node_type.shape[0]
     
@@ -312,27 +336,15 @@ def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, r
                 val_a = node_outputs[k_offset + left[i]]
                 val_b = node_outputs[k_offset + right[i]]
                 
-                # --- FAST FUZZIFICATION A ---
-                # We calculate High and Low. Med is remainder.
-                
-                # Low A: 1.0 at 0, 0.0 at c1. (Linear drop)
-                # Formula: 1 - (val / c1) = 1 - val * inv
                 low_a = 1.0 - (val_a * m1_inv[i])
-                
-                # High A: 0.0 at c1, 1.0 at 1. (Linear rise)
-                # Formula: (val - c1) / (1 - c1) = (val * inv_c) - (c1 * inv_c)
-                # Simpler: 1 - (1-val)/(1-c1) = 1 - (1-val)*inv_c
                 high_a = 1.0 - ((1.0 - val_a) * m1_inv_c[i])
                 
-                # Branchless Clamp
                 if low_a < 0.0: low_a = 0.0
                 if high_a < 0.0: high_a = 0.0
                 
-                # Partition of Unity: Med is whatever is left
                 med_a = 1.0 - low_a - high_a
-                if med_a < 0.0: med_a = 0.0 # Float error safety
+                if med_a < 0.0: med_a = 0.0
 
-                # --- FAST FUZZIFICATION B ---
                 low_b = 1.0 - (val_b * m2_inv[i])
                 high_b = 1.0 - ((1.0 - val_b) * m2_inv_c[i])
                 
@@ -342,25 +354,11 @@ def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, r
                 med_b = 1.0 - low_b - high_b
                 if med_b < 0.0: med_b = 0.0
 
-                # --- FACTORED RULE EVALUATION ---
-                # Original: Sum( w_ij * R_ij ) / Sum( w_ij )
-                # Optimization 1: Sum( w_ij ) is always 1.0 due to Partition of Unity.
-                # Optimization 2: Factor out terms.
-                # Output = LowA * (Sum of LowA Rules) + MedA * (Sum MedA Rules) ...
-                
-                # Pre-sum rules weighted by B (Inner Loop)
-                # Row 0 (Low A interacting with B)
                 r_low_a = (low_b * rules[i, 0]) + (med_b * rules[i, 1]) + (high_b * rules[i, 2])
-                
-                # Row 1 (Med A interacting with B)
                 r_med_a = (low_b * rules[i, 3]) + (med_b * rules[i, 4]) + (high_b * rules[i, 5])
-                
-                # Row 2 (High A interacting with B)
                 r_high_a = (low_b * rules[i, 6]) + (med_b * rules[i, 7]) + (high_b * rules[i, 8])
                 
-                # Final Sum
                 output = (low_a * r_low_a) + (med_a * r_med_a) + (high_a * r_high_a)
-                
                 node_outputs[k_offset + i] = output
 
     final_output = np.empty(num_samples, dtype=np.float64)
@@ -373,7 +371,6 @@ def fis_eval_batch(node_type, left, right, m1_inv, m1_inv_c, m2_inv, m2_inv_c, r
 def compile_chromosome(chrom):
     nt, le, ri, m1i, m1ic, m2i, m2ic, rl = flatten_tree(chrom)
     chrom._flat_repr = (nt, le, ri, m1i, m1ic, m2i, m2ic, rl)
-    pass
 
 
 # -----------------------------------------------------------------------------
@@ -409,6 +406,8 @@ def save_chromosome(ch, filename):
         del ch.compiled
     if hasattr(ch, "_flat_repr"):
         del ch._flat_repr
+    if hasattr(ch, "cached_fitness"):
+        del ch.cached_fitness
     with open(filename, "wb") as f:
         pickle.dump(ch, f)
 
@@ -437,10 +436,13 @@ game_settings = {
 
 def kessler_score_to_scalar(score, info):
     t = score.teams[0]
-
     return (t.asteroids_hit * t.accuracy) - 20 * t.deaths 
 
 def fitness(ind, cfg, controller_callback):
+    # ELITISM CACHE
+    if hasattr(ind, "cached_fitness") and ind.cached_fitness is not None:
+        return ind.cached_fitness
+
     scenario = scenarios[cfg["scenario_name"]]
     episodes = cfg["episodes_per_eval"]
     total = 0.0
@@ -451,7 +453,9 @@ def fitness(ind, cfg, controller_callback):
         score, info = game.run(scenario=scenario, controllers=[controller])
         total += kessler_score_to_scalar(score, info)
 
-    return -total / episodes
+    val = total / episodes
+    ind.cached_fitness = val
+    return val
 
 def evaluate_population(population, cfg):
     callback = cfg["controller_callback"]
@@ -464,7 +468,7 @@ def evaluate_population(population, cfg):
 
 
 # -----------------------------------------------------------------------------
-# SECTION 9: SELECTION
+# SECTION 9: SELECTION AND CONSTRAINED STRUCTURAL MUTATION
 # -----------------------------------------------------------------------------
 
 def tournament(pop, fit_dict, k):
@@ -473,18 +477,75 @@ def tournament(pop, fit_dict, k):
     for _ in range(k - 1):
         cand = random.choice(pop)
         f = fit_dict[id(cand)]
-        if f < best_f:
+        if f > best_f: # MAXIMIZATION
             best = cand
             best_f = f
     return best
 
+def collect_nodes_with_parents(node, parent=None, is_left=False, node_list=None):
+    if node_list is None:
+        node_list = []
+    
+    node_list.append((node, parent, is_left))
+    
+    if isinstance(node, FISNode):
+        if node.left:
+            collect_nodes_with_parents(node.left, node, True, node_list)
+        if node.right:
+            collect_nodes_with_parents(node.right, node, False, node_list)
+    return node_list
+
+def structural_mutate_constrained(root):
+    """
+    Mutates tree strictly preserving inputs.
+    Supported Mutations:
+    1. Leaf Swap: Swaps the indices of two leaf nodes.
+    2. Subtree Reshuffle: Picks a subtree and rebuilds it randomly using the exact same leaves.
+    """
+    mutation_type = random.choice(["leaf_swap", "reshuffle"])
+    
+    if mutation_type == "leaf_swap":
+        # USE GATHER_LEAF_NODES (Returns Objects)
+        leaves = []
+        gather_leaf_nodes(root, leaves)
+        
+        if len(leaves) >= 2:
+            a, b = random.sample(leaves, 2)
+            # Swap their input indices
+            a.index, b.index = b.index, a.index
+            
+    elif mutation_type == "reshuffle":
+        nodes = collect_nodes_with_parents(root)
+        if not nodes: return root
+        
+        target, parent, is_left = random.choice(nodes)
+        
+        # USE GATHER_LEAVES (Returns Indices)
+        # We need the indices to rebuild a fresh tree
+        indices = []
+        gather_leaves(target, indices)
+        
+        if len(indices) < 2:
+            return root
+            
+        new_subtree = random_full_tree_with_leaves(indices)
+        
+        if parent is None:
+            return new_subtree 
+        else:
+            if is_left:
+                parent.left = new_subtree
+            else:
+                parent.right = new_subtree
+
+    return root
 
 # -----------------------------------------------------------------------------
 # SECTION 10: MAIN GA LOOP
 # -----------------------------------------------------------------------------
 
 def run_ga(cfg):
-    print("Starting GA with FAST FUZZY evaluation (Partition of Unity)...")
+    print("Starting GA (Maximization, Strict Input Constraints, Compat Fixed)...")
     popsize = cfg["popsize"]
     gens = cfg["generations"]
     groups = [sorted(g) for g in cfg["groups"]]
@@ -499,7 +560,7 @@ def run_ga(cfg):
         compile_chromosome(p)
 
     best_history = []
-
+    
     for gen in range(gens):
         if max_seconds and (time.time() - ga_start_time) >= max_seconds:
             print("Time limit reached.")
@@ -514,15 +575,25 @@ def run_ga(cfg):
         print(f" Eval Time: {eval_time:.2f}s")
 
         fit_dict = {id(ind): f for ind, f in zip(population, fitness_values)}
-        ranked = sorted(zip(fitness_values, population), key=lambda x: x[0])
-        best_fit = ranked[0][0]
-        best_history.append(best_fit)
         
-        print(f" Best Fitness: {best_fit:.4f}")
+        ranked = sorted(zip(fitness_values, population), key=lambda x: x[0], reverse=True)
+        
+        current_best_fit = ranked[0][0]
+        current_best_ind = ranked[0][1]
+        
+        best_history.append(current_best_fit)
+        print(f" Best Fitness: {current_best_fit:.4f}")
 
-        elite = copy_tree(ranked[0][1])
+        # --- ELITISM ---
+        elite = copy_tree(current_best_ind)
+        elite.cached_fitness = current_best_fit
         compile_chromosome(elite)
         new_pop = [elite]
+
+        param_cross_prob = linear_schedule(cfg["param_cross_prob_start"], cfg["param_cross_prob_end"], gen, gens)
+        struct_mut_prob  = linear_schedule(cfg["struct_mut_prob_start"], cfg["struct_mut_prob_end"], gen, gens)
+        mf_rate          = linear_schedule(cfg["mf_mut_rate_start"], cfg["mf_mut_rate_end"], gen, gens)
+        rule_rate        = linear_schedule(cfg["rule_mut_rate_start"], cfg["rule_mut_rate_end"], gen, gens)
 
         while len(new_pop) < popsize:
             p1 = tournament(population, fit_dict, k)
@@ -531,7 +602,10 @@ def run_ga(cfg):
             c1 = copy_tree(p1)
             c2 = copy_tree(p2)
             
-            param_cross_prob = linear_schedule(cfg["param_cross_prob_start"], cfg["param_cross_prob_end"], gen, gens)
+            if hasattr(c1, "cached_fitness"): del c1.cached_fitness
+            if hasattr(c2, "cached_fitness"): del c2.cached_fitness
+
+            # Parameter Crossover
             if random.random() < param_cross_prob:
                 A = []
                 B = []
@@ -544,10 +618,14 @@ def run_ga(cfg):
                     na.medium2_center, nb.medium2_center = nb.medium2_center, na.medium2_center
                     na.rule_constants, nb.rule_constants = nb.rule_constants, na.rule_constants
 
-            mf_rate = linear_schedule(cfg["mf_mut_rate_start"], cfg["mf_mut_rate_end"], gen, gens)
-            rule_rate = linear_schedule(cfg["rule_mut_rate_start"], cfg["rule_mut_rate_end"], gen, gens)
-            
-            def mutate(node):
+            # Constrained Structural Mutation
+            if random.random() < struct_mut_prob:
+                c1 = structural_mutate_constrained(c1)
+            if random.random() < struct_mut_prob:
+                c2 = structural_mutate_constrained(c2)
+
+            # Parameter Mutation
+            def mutate_params(node):
                 stack = [node]
                 while stack:
                     n = stack.pop()
@@ -562,8 +640,8 @@ def run_ga(cfg):
                         if n.left: stack.append(n.left)
                         if n.right: stack.append(n.right)
             
-            mutate(c1)
-            mutate(c2)
+            mutate_params(c1)
+            mutate_params(c2)
             clamp_mfs(c1)
             clamp_mfs(c2)
             
@@ -581,7 +659,7 @@ def run_ga(cfg):
     finish_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print("\n" + "="*60)
-    print("GA TRAINING COMPLETE (Fast Fuzzy)")
+    print("GA TRAINING COMPLETE (Compat Fixed)")
     print("="*60)
     print(f"Finished at:    {finish_time_str}")
     print(f"Total Runtime:  {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
@@ -591,5 +669,5 @@ def run_ga(cfg):
         print(f"  {key:<25}: {value}")
     print("="*60 + "\n")
 
-    best_index = int(np.argmin(fitness_values))
+    best_index = int(np.argmax(fitness_values))
     return population[best_index], best_history
