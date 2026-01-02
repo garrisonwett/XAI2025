@@ -2,98 +2,70 @@ import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 
-from algorithms import get_ga_config, run_ga, save_chromosome
+from algorithms import get_ga_config, run_ga, save_chromosome, InputNode, FISNode
 from redone_controller import FuzzyController
 
-
 ###############################################################################
-# Tree Visualization Helpers
+# Tree Visualization
 ###############################################################################
 
-def subtree_color(node, groups_sorted, gather_leaves):
-    leaves = []
-    gather_leaves(node, leaves)
-    leaves_sorted = sorted(leaves)
-    for gi, g in enumerate(groups_sorted):
-        if leaves_sorted == g:
-            return gi
-    return -1
+def hierarchy_pos(G, root, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5):
+    pos = {root: (xcenter, vert_loc)}
+    neighbors = list(G.successors(root))
+    if len(neighbors) != 0:
+        dx = width / len(neighbors) 
+        nextx = xcenter - width/2 - dx/2
+        for neighbor in neighbors:
+            nextx += dx
+            pos.update(hierarchy_pos(G, neighbor, width=dx, vert_gap=vert_gap, 
+                                     vert_loc=vert_loc-vert_gap, xcenter=nextx))
+    return pos
 
-
-def hierarchy_pos(G, root):
-    def recurse(n, x0, x1, y, dy, pos):
-        pos[n] = ((x0 + x1) / 2, y)
-        kids = list(G.successors(n))
-        if not kids:
-            return pos
-        step = (x1 - x0) / len(kids)
-        nx0 = x0
-        for c in kids:
-            nx1 = nx0 + step
-            recurse(c, nx0, nx1, y - dy, dy, pos)
-            nx0 = nx1
-        return pos
-    return recurse(root, 0, 1, 0, 0.1, {})
-
-
-def build_graph(node, groups_sorted, G, parent, counter, gather_leaves):
+def build_graph(node, G, parent, counter):
     nid = f"n{counter[0]}"
     counter[0] += 1
 
-    from algorithms import InputNode, FISNode
     if isinstance(node, InputNode):
-        label = f"in {node.index}"
+        label = f"In: {node.index}"
+        color = "#ffcccc" # Reddish
+    elif isinstance(node, FISNode):
+        label = f"FIS\n[{node.medium1_center:.2f}, {node.medium2_center:.2f}]"
+        color = "#ccffcc" # Greenish
     else:
-        label = "FIS"
+        label = "?"
+        color = "white"
 
-    color_index = subtree_color(node, groups_sorted, gather_leaves)
-
-    G.add_node(nid, label=label, color=color_index)
+    G.add_node(nid, label=label, fillcolor=color)
 
     if parent is not None:
         G.add_edge(parent, nid)
 
     if hasattr(node, "left") and node.left is not None:
-        build_graph(node.left, groups_sorted, G, nid, counter, gather_leaves)
+        build_graph(node.left, G, nid, counter)
     if hasattr(node, "right") and node.right is not None:
-        build_graph(node.right, groups_sorted, G, nid, counter, gather_leaves)
+        build_graph(node.right, G, nid, counter)
 
-    return G
+    return G, nid
 
-
-def visualize_tree(root, groups, gather_leaves):
-    groups_sorted = [sorted(g) for g in groups]
+def visualize_tree(root):
     G = nx.DiGraph()
-
     counter = [0]
-    G = build_graph(root, groups_sorted, G, None, counter, gather_leaves)
-
-    labels = nx.get_node_attributes(G, "label")
-    colors = nx.get_node_attributes(G, "color")
+    build_graph(root, G, None, counter)
 
     root_nodes = [n for n in G.nodes if G.in_degree(n) == 0]
+    if not root_nodes:
+        print("Error: Could not find tree root for visualization.")
+        return
+        
     pos = hierarchy_pos(G, root_nodes[0])
+    labels = nx.get_node_attributes(G, "label")
+    colors = [nx.get_node_attributes(G, "fillcolor").get(n, "white") for n in G.nodes]
 
-    palette = [
-        "lightgreen", "lightskyblue", "lightcoral",
-        "khaki", "plum", "salmon", "tan", "lightpink"
-    ]
-
-    node_colors = []
-    for n in G.nodes:
-        idx = colors[n]
-        if idx is None or idx < 0:
-            node_colors.append("lightgray")
-        else:
-            node_colors.append(palette[idx % len(palette)])
-
-    plt.figure(figsize=(12, 8))
-    nx.draw(G, pos, node_color=node_colors, with_labels=False, arrows=True)
-    nx.draw_networkx_labels(G, pos, labels=labels, font_size=8)
-    plt.gca().invert_yaxis()
+    plt.figure(figsize=(14, 8))
+    nx.draw(G, pos, node_color=colors, with_labels=False, arrows=True, node_size=2000, edgecolors="black")
+    nx.draw_networkx_labels(G, pos, labels=labels, font_size=9, font_weight="bold")
     plt.title("Final Fuzzy Tree Structure")
     plt.show()
-
 
 ###############################################################################
 # Fitness Plot
@@ -104,38 +76,43 @@ def plot_fitness(history):
     x = np.arange(generations)
     y = np.array(history)
 
-    plt.figure(figsize=(8, 5))
-    plt.plot(x, y, label="Best fitness")
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, y, label="Best Fitness", linewidth=2, marker='o', markersize=4)
 
     if generations > 1:
         m, b = np.polyfit(x, y, 1)
         yfit = m * x + b
-        plt.plot(x, yfit, linestyle="--", label="Line of best fit")
+        plt.plot(x, yfit, linestyle="--", color="red", alpha=0.7, label="Trend")
 
     plt.xlabel("Generation")
-    plt.ylabel("Best fitness (lower is better)")
-    plt.title("GA Fitness Over Time")
-    plt.grid(True)
+    plt.ylabel("Fitness Score (Higher is Better)")
+    plt.title("Evolutionary Progress")
+    plt.grid(True, which="both", linestyle="--", alpha=0.7)
     plt.legend()
     plt.show()
-
 
 ###############################################################################
 # Main
 ###############################################################################
 
 if __name__ == "__main__":
+    # 1. Configuration
     cfg = get_ga_config()
+    
+    # 2. Link your controller class
+    # The new 'SafeControllerWrapper' in algorithms.py will handle 
+    # if your controller only returns 2 values.
+    cfg["controller_callback"] = FuzzyController
 
-    cfg["controller_callback"] = lambda chrom: FuzzyController(chrom)
-
+    # 3. Train
     best, history = run_ga(cfg)
 
-    from algorithms import gather_leaves
-    visualize_tree(best, cfg["groups"], gather_leaves)
-
-    plot_fitness(history)
-
+    # 4. Save & Visualize
     save_chromosome(best, "best_kessler_fuzzy.pkl")
-    print("Training complete.")
-    print("Saved best chromosome to best_kessler_fuzzy.pkl")
+    print("\nTraining complete. Saved to 'best_kessler_fuzzy.pkl'")
+    
+    try:
+        plot_fitness(history)
+        visualize_tree(best)
+    except Exception as e:
+        print(f"Visualization skipped: {e}")
