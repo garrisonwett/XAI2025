@@ -198,7 +198,7 @@ class FuzzyController(KesslerController):
                 input_closure = np.clip((closure + 100) / 200, 0.0, 1.0)
 
                 # 3. Radius
-                input_radius = np.clip((arad - 8) / 24, 0.0, 1.0)
+                input_radius = np.clip(arad/40, 0.0, 1.0)
                 
                 # 4. Distance
                 dist_val = math.hypot(apos[0] - ship_pos[0], apos[1] - ship_pos[1])
@@ -264,43 +264,44 @@ class FuzzyController(KesslerController):
 
         # ###############
         # # THROTTLE LOGIC
-        thrust = 0.0
 
-        # Simple Proximity Avoidance (Accounting for toroidal map wrapping using vm helper)
+        # 1. Calculate Proximity (Existing logic reused)
         closest_dist = float('inf')
-        closest_rel_pos = None # Vector pointing to the asteroid relative to ship
-
-        # Use all asteroids for avoidance calculations
-        asteroid_positions = [a["position"] for a in asteroids]
+        closest_rel_pos = None # Vector pointing FROM ship TO asteroid
         
-        # vm.game_to_ship_frame returns relative (dx, dy) tuples adjusted for wrapping
+        asteroid_positions = [a["position"] for a in asteroids]
+        # vm.game_to_ship_frame handles the map wrapping math for us
         relative_positions = vm.game_to_ship_frame(ship_pos, asteroid_positions, game_state["map_size"])
 
         for rel_pos in relative_positions:
-            # rel_pos is ALREADY the vector from ship to asteroid (dx, dy)
-            dx = rel_pos[0]
-            dy = rel_pos[1]
+            dist = math.hypot(rel_pos[0], rel_pos[1])
+            if dist < closest_dist:
+                closest_dist = dist
+                closest_rel_pos = np.array(rel_pos)
 
-            d = math.hypot(dx, dy)
+        # 2. Determine Thrust
+        thrust = 0.0
+        
+        # Calculate ship direction vector
+        rad = math.radians(ship_heading)
+        ship_dir = np.array([math.cos(rad), math.sin(rad)])
 
-            if d < closest_dist:
-                closest_dist = d
-                closest_rel_pos = np.array([dx, dy])
-
-        # If the closest asteroid is within 400 units, take evasive action
-        if closest_rel_pos is not None and closest_dist < 400.0:
-            # Calculate ship direction vector from heading
-            rad = math.radians(ship_heading)
-            ship_dir = np.array([math.cos(rad), math.sin(rad)])
-            
-            # Check if asteroid is in front (dot product > 0) or behind
-            scale_factor = min(1.0, 50.0 / max(closest_dist, 0.01))
-            
+        # A. CRITICAL EVASION (Panic Zone)
+        # If an asteroid is within 250 units, get away immediately.
+        if closest_rel_pos is not None and closest_dist < 250.0:
+            # Dot product determines if asteroid is generally in front (>0) or behind (<0)
             if np.dot(closest_rel_pos, ship_dir) > 0:
-                thrust = -480.0 * scale_factor  # Reverse away from danger
+                thrust = -480.0  # Asteroid is in front -> Full Reverse
             else:
-                thrust = 480.0 * scale_factor   # Accelerate away from danger
-        thrust = 0
+                thrust = 480.0   # Asteroid is behind -> Full Forward
+        
+        # B. STABILITY (Braking Zone)
+        # If safe, apply drag to stop drifting. This makes aiming much easier.
+        elif ship_speed > 10.0:
+             thrust = -200.0  # Apply gentle reverse thrust to slow down
+        
+        # (Note: We removed the 'thrust = 0' line that was overwriting your logic)
+
         if not math.isfinite(turn_angle):
             turn_angle = 0.0
             

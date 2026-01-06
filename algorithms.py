@@ -4,6 +4,7 @@ import pickle
 import copy
 import time
 import os
+import traceback  # Added for debugging
 from concurrent.futures import ProcessPoolExecutor
 from numba import njit, float64, int32
 import matplotlib.pyplot as plt
@@ -21,12 +22,14 @@ def get_ga_config():
         "tournament_k": 3,
         
         # --- Multiprocessing ---
-        "num_workers": 8,             # Adjust based on your CPU cores
+        # SET THIS TO 1 TO DEBUG CRASHES. 
+        # If 1, it runs in the main process and shows all errors immediately.
+        "num_workers": 8,             
         
         # --- Problem Constraints ---
         "input_count": 5,             
         "groups": [],                 
-        "max_hours": 2.0,             
+        "max_hours": 8,             
 
         # --- Mutation Rates ---
         "mf_mut_rate_start": 0.50, "mf_mut_rate_end": 0.02,
@@ -35,8 +38,8 @@ def get_ga_config():
         "param_cross_prob_start": 0.80, "param_cross_prob_end": 0.50,
 
         # --- Evaluation ---
-        "scenario_name": "training2", 
-        "episodes_per_eval": 1,
+        "scenario_names": ["training1", "training2"], 
+        "game_type": "TrainerEnvironment",
         "controller_callback": None, 
     }
     return cfg
@@ -289,13 +292,30 @@ def save_chromosome(ch, filename):
     with open(filename, "wb") as f: pickle.dump(ch, f)
     compile_chromosome(ch)
 
+# Create a custom unpickler class
+class RedirectUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        # If the pickle is looking for classes in "__main__", 
+        # redirect it to "algorithms"
+        if module == "__main__":
+            module = "algorithms"
+        return super().find_class(module, name)
+
 def load_chromosome(filename):
-    with open(filename, "rb") as f: ch = pickle.load(f)
+    with open(filename, "rb") as f:
+        try:
+            # Try loading normally
+            ch = pickle.load(f)
+        except AttributeError:
+            # If it fails due to namespace issues, try the redirect
+            f.seek(0)
+            ch = RedirectUnpickler(f).load()
+            
     compile_chromosome(ch)
     return ch
 
 # -----------------------------------------------------------------------------
-# SECTION 6: WORKER EVALUATION & SAFETY WRAPPER
+# SECTION 6: WORKER EVALUATION & SAFETY WRAPPER (PATCHED)
 # -----------------------------------------------------------------------------
 
 try:
@@ -328,6 +348,19 @@ class SafeControllerWrapper:
         
     def actions(self, ship_state, game_state):
         result = self.controller.actions(ship_state, game_state)
+        
+        # --- DEBUG: CHECK FOR NAN ---
+        # If the fuzzy tree outputs NaN, the game engine will hang or segfault
+        # We verify that outputs are valid numbers
+        if np.isnan(result[0]) or np.isnan(result[1]):
+            print(f"!!! CRITICAL WARNING: Controller output NaN: {result} !!!")
+            # Force output to zero to prevent physics engine freeze
+            return 0.0, 0.0, False, False
+        
+        if np.isinf(result[0]) or np.isinf(result[1]):
+             print(f"!!! CRITICAL WARNING: Controller output Inf: {result} !!!")
+             return 0.0, 0.0, False, False
+
         # If the user controller returns only 2 values, we add Fire=False, Mine=False
         if len(result) == 2:
             return result[0], result[1], False, False
@@ -344,41 +377,77 @@ def worker_eval(flat_repr, cfg, controller_callback):
             
     dummy = DummyChrom()
     
-    scenario = scenarios[cfg["scenario_name"]]
-    game = TrainerEnvironment(settings=game_settings)
+    scenario_list = cfg["scenario_names"]
     total_score = 0.0
     
-    for _ in range(cfg["episodes_per_eval"]):
+    # Iterate over the specific list of scenarios
+    for s_name in scenario_list:
+        scenario = scenarios[s_name]
+        
+        # We create a fresh environment for each scenario to ensure no state leakage
+        game = TrainerEnvironment(settings=game_settings)
+        
         # 1. Create User Controller (passing dummy)
         raw_controller = controller_callback(dummy)
-        # 2. Wrap it to ensure 4 return values
+        # 2. Wrap it to ensure 4 return values and NaN safety
         safe_controller = SafeControllerWrapper(raw_controller)
         
         score, info = game.run(scenario=scenario, controllers=[safe_controller])
         total_score += kessler_score_to_scalar(score, info)
         
-    return total_score / cfg["episodes_per_eval"]
+    # Average the score across the different scenarios
+    return total_score / len(scenario_list)
+
+# --- DEBUG WRAPPER ---
+def debug_eval_wrapper(args):
+    """
+    Wraps the worker execution to catch silent crashes and print progress.
+    args is a tuple: (index, flat_repr, cfg, callback)
+    """
+    idx, flat_repr, cfg, callback = args
+    # Ensure stdout flushes immediately
+    print(f"[Worker {os.getpid()}] START Eval ID: {idx}", flush=True)
+    try:
+        start_t = time.time()
+        result = worker_eval(flat_repr, cfg, callback)
+        dur = time.time() - start_t
+        print(f"[Worker {os.getpid()}] END   Eval ID: {idx} | Score: {result:.2f} | Time: {dur:.2f}s", flush=True)
+        return result
+    except Exception as e:
+        print(f"\n!!!!!!!!!!!!!! CRASH DETECTED IN EVAL ID: {idx} !!!!!!!!!!!!!!")
+        print(f"Error: {e}")
+        traceback.print_exc()
+        # Return a terrible fitness score instead of crashing the whole pool
+        return -99999.0
 
 def evaluate_population(population, cfg):
     callback = cfg["controller_callback"]
     num_workers = cfg.get("num_workers", 1)
     
     todo_indices = []
-    todo_flat_reprs = []
+    todo_payloads = []
+    
     for i, ind in enumerate(population):
         if not hasattr(ind, "cached_fitness") or ind.cached_fitness is None:
             if not hasattr(ind, "_flat_repr"): compile_chromosome(ind)
             todo_indices.append(i)
-            todo_flat_reprs.append(ind._flat_repr)
+            # We bundle index into the payload for logging purposes
+            todo_payloads.append((i, ind._flat_repr, cfg, callback))
 
     results = []
-    if num_workers > 1 and len(todo_indices) > 0:
+    
+    # --- SINGLE THREADED MODE (STRICT) ---
+    if num_workers <= 1:
+        print(f"--> Running Single-Threaded Mode on {len(todo_indices)} items...")
+        for payload in todo_payloads:
+            # Direct call, no pool, no swallowing of stdout
+            results.append(debug_eval_wrapper(payload))
+            
+    # --- MULTI THREADED MODE ---
+    elif len(todo_indices) > 0:
+        # Use debug_eval_wrapper instead of worker_eval to get printouts
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            results = list(executor.map(worker_eval, todo_flat_reprs, [cfg]*len(todo_indices), [callback]*len(todo_indices)))
-    else:
-        for i in todo_indices:
-            ind = population[i]
-            results.append(worker_eval(ind._flat_repr, cfg, callback))
+            results = list(executor.map(debug_eval_wrapper, todo_payloads))
             
     for idx, score in zip(todo_indices, results):
         population[idx].cached_fitness = score
