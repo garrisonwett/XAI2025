@@ -406,12 +406,12 @@ def debug_eval_wrapper(args):
     """
     idx, flat_repr, cfg, callback = args
     # Ensure stdout flushes immediately
-    print(f"[Worker {os.getpid()}] START Eval ID: {idx}", flush=True)
+    #print(f"[Worker {os.getpid()}] START Eval ID: {idx}", flush=True)
     try:
         start_t = time.time()
         result = worker_eval(flat_repr, cfg, callback)
         dur = time.time() - start_t
-        print(f"[Worker {os.getpid()}] END   Eval ID: {idx} | Score: {result:.2f} | Time: {dur:.2f}s", flush=True)
+        #print(f"[Worker {os.getpid()}] END   Eval ID: {idx} | Score: {result:.2f} | Time: {dur:.2f}s", flush=True)
         return result
     except Exception as e:
         print(f"\n!!!!!!!!!!!!!! CRASH DETECTED IN EVAL ID: {idx} !!!!!!!!!!!!!!")
