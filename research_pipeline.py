@@ -61,7 +61,7 @@ def run_hyperparameter_tuning():
     # Define a small grid of parameters to test
     # Kept small for demonstration. Expand lists for deeper research.
     tuning_grid = {
-        "popsize": [20, 40],
+        "popsize": [10, 20],
         "struct_mut_start": [0.3, 0.7],
         "mf_mut_start": [0.3, 0.7]
     }
@@ -88,7 +88,7 @@ def run_hyperparameter_tuning():
         
         # Reduce generations/time for tuning phase to save time
         cfg["generations"] = 100  # Short runs to see convergence speed
-        cfg["max_hours"] = 3   # 180 mins max per run
+        cfg["max_hours"] = 30   # 180 mins max per run
         
         # 2. Run GA
         # Note: algorithms.run_ga returns (best_ind, history)
@@ -142,7 +142,7 @@ def run_ablation_study(best_params=None):
     
     # Run multiple trials (seeds) for statistical significance
     # Ideally 5-10 runs, using 2 here for time
-    NUM_TRIALS = 3 
+    NUM_TRIALS = 5 
     GENERATIONS = 100 # Longer runs for final results
 
     for exp_name, do_struct, do_params in experiments:
@@ -154,10 +154,10 @@ def run_ablation_study(best_params=None):
             cfg = algorithms.get_ga_config()
             cfg["controller_callback"] = FuzzyController
             cfg["generations"] = GENERATIONS
-            cfg["max_hours"] = 2.0 
+            cfg["max_hours"] = 30 
             
             # Apply Best Params from Phase 1
-            cfg["popsize"] = best_params.get("popsize", 40)
+            cfg["popsize"] = best_params.get("popsize", 20)
             
             # --- APPLY ABLATION SETTINGS ---
             

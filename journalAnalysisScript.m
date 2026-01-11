@@ -1,8 +1,8 @@
 % =========================================================================
-%  FUZZY GENETIC ALGORITHM - COMPLETE JOURNAL ANALYSIS
+%  FUZZY GENETIC ALGORITHM - COMPLETE JOURNAL ANALYSIS (FINAL)
 %  Author: Automated Script
-%  Description: Analyzes BOTH Phase 1 (Tuning) and Phase 2 (Ablation) data.
-%               Generates all plots and statistics in one go.
+%  Description: Analyzes Phase 1 and Phase 2 data.
+%               Groups 'trial_0', 'trial_1', etc. into single experiments.
 % =========================================================================
 
 clear; clc; close all;
@@ -20,78 +20,71 @@ fprintf('STARTING PHASE 1 ANALYSIS: Hyperparameter Tuning\n');
 fprintf('=================================================\n');
 
 if isfile(filePhase1)
-    % 1. Load Data
     opts = detectImportOptions(filePhase1);
     opts = setvartype(opts, {'run_id', 'experiment'}, 'categorical');
     T1 = readtable(filePhase1, opts);
     
-    % 2. Process Data
-    % We want to compare different tuning configs (run_ids)
     try
-        % Pivot: Rows=Gen, Cols=Config(run_id)
         pivoted = unstack(T1, 'best_fitness', 'run_id');
-        
-        % Extract Generation and Data Matrix
         gens = pivoted.generation;
-        % Extract numeric columns that correspond to run_ids
+        
+        % Safe numeric extraction
         dataCols = pivoted(:, varfun(@isnumeric, pivoted, 'OutputFormat', 'uniform'));
-        % Remove generation column from data matrix
         if ismember('generation', dataCols.Properties.VariableNames)
              tuningMatrix = dataCols{:, ~strcmp(dataCols.Properties.VariableNames, 'generation')};
         else
              tuningMatrix = dataCols{:, :};
         end
-        tuningNames = pivoted.Properties.VariableNames(2:end); % Rough approximation of names
         
-        % 3. Plot Convergence Comparison
+        % Plot
         figure('Name', 'Phase 1: Tuning Convergence', 'Color', 'w', 'Position', [50, 50, 700, 500]);
-        hold on; grid on;
         plot(gens, tuningMatrix, 'LineWidth', 2);
-        
-        xlabel('Generation');
-        ylabel('Best Fitness');
+        grid on; xlabel('Generation'); ylabel('Best Fitness');
         title('Phase 1: Hyperparameter Convergence Speed');
-        legend(tuningNames, 'Location', 'southeast', 'Interpreter', 'none');
-        set(gca, 'FontSize', 11);
         
-        % 4. Bar Chart of Final Scores
+        % Bar Chart
         finalScores = tuningMatrix(end, :);
-        figure('Name', 'Phase 1: Final Scores', 'Color', 'w', 'Position', [760, 50, 500, 500]);
-        b = bar(finalScores);
-        b.FaceColor = 'flat';
-        xticklabels(tuningNames);
-        ylabel('Final Fitness Score');
-        title('Comparison of Hyperparameter Sets');
-        grid on;
-        
         [maxScore, idx] = max(finalScores);
-        fprintf('Phase 1 Best Config: Column %d (Score: %.4f)\n', idx, maxScore);
+        fprintf('Phase 1 Best Config Score: %.4f\n', maxScore);
         
     catch ME
         warning('Phase 1 Analysis Failed: %s', ME.message);
     end
 else
-    fprintf('Skipping Phase 1: File not found (%s)\n', filePhase1);
+    fprintf('Skipping Phase 1: File not found.\n');
 end
 
 % =========================================================================
-%  PART 2: PHASE 2 - ABLATION STUDY (THE CORE PAPER RESULTS)
+%  PART 2: PHASE 2 - ABLATION STUDY
 % =========================================================================
 fprintf('\n=================================================\n');
 fprintf('STARTING PHASE 2 ANALYSIS: Ablation Study\n');
 fprintf('=================================================\n');
 
 if isfile(filePhase2)
-    % 1. Load Data
     opts = detectImportOptions(filePhase2);
-    opts = setvartype(opts, {'run_id', 'experiment'}, 'categorical');
+    % Load run_id as string so we can parse it
+    opts = setvartype(opts, {'run_id'}, 'string'); 
     T2 = readtable(filePhase2, opts);
     
+    % --- LOGIC: Group Trials by Experiment Name ---
+    % Splits "ExperimentName_trial_X" -> "ExperimentName"
+    rawIDs = T2.run_id;
+    realExperiments = strings(height(T2), 1);
+    
+    for k = 1:height(T2)
+        parts = strsplit(rawIDs(k), '_trial_');
+        realExperiments(k) = parts(1);
+    end
+    
+    T2.experiment = categorical(realExperiments);
     experiments = unique(T2.experiment);
+    fprintf('Detected Groups: %s\n', strjoin(string(experiments), ', '));
+    
     colors = lines(length(experiments)); 
     finalFitnessStruct = struct();
     
-    % Prepare Plot 1: Trajectory
+    % Plot 1: Trajectory
     figTraj = figure('Name', 'Phase 2: Evolutionary Trajectory', 'Color', 'w', 'Position', [100, 100, 800, 600]);
     hold on; grid on;
     
@@ -100,11 +93,11 @@ if isfile(filePhase2)
         subTable = T2(T2.experiment == expName, :);
         
         try
-            % Pivot: Rows=Gen, Cols=Trials
+            % Pivot Table
             pivoted = unstack(subTable, 'best_fitness', 'run_id');
             gens = pivoted.generation;
             
-            % Extract numeric data safely
+            % Extract Data Matrix
             dataCols = pivoted(:, varfun(@isnumeric, pivoted, 'OutputFormat', 'uniform'));
             if ismember('generation', dataCols.Properties.VariableNames)
                  fitMatrix = dataCols{:, ~strcmp(dataCols.Properties.VariableNames, 'generation')};
@@ -112,40 +105,45 @@ if isfile(filePhase2)
                  fitMatrix = dataCols{:, :};
             end
             
-            % Stats
+            % Handle potential missing data (e.g. if one trial was 1 gen shorter)
+            fitMatrix = fillmissing(fitMatrix, 'previous');
+
+            % Statistics
             mu = mean(fitMatrix, 2, 'omitnan');
             sigma = std(fitMatrix, 0, 2, 'omitnan');
             
-            % Store for Box Plot
-            safeName = matlab.lang.makeValidName(char(expName));
-            finalFitnessStruct.(safeName) = fitMatrix(end, :)';
+            % Store final values for Box Plot
+            finalVals = fitMatrix(end, :)';
             
-            % Plot Shading
+            % Create Safe Field Name for Struct
+            safeName = matlab.lang.makeValidName(char(expName));
+            finalFitnessStruct.(safeName) = finalVals;
+            
+            % Plot Error Shading
             x_poly = [gens; flipud(gens)];
             y_poly = [mu - sigma; flipud(mu + sigma)];
             fill(x_poly, y_poly, colors(i,:), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
                 'DisplayName', sprintf('%s (Std Dev)', expName));
             
-            % Plot Mean
+            % Plot Mean Line
             plot(gens, mu, 'Color', colors(i,:), 'LineWidth', 2.5, ...
                 'DisplayName', sprintf('%s (Mean)', expName));
             
-            fprintf('Processed Experiment: %s | Final Mean: %.4f\n', expName, mu(end));
+            fprintf('Processed %s | Final Mean: %.4f | Samples: %d\n', ...
+                expName, mu(end), length(finalVals));
             
         catch ME
-            warning('Could not process experiment %s: %s', expName, ME.message);
+            warning('Error processing %s: %s', expName, ME.message);
         end
     end
     
-    % Format Trajectory Plot
     figure(figTraj);
     xlabel('Generation', 'FontSize', 12, 'FontWeight', 'bold');
     ylabel('Fitness Score', 'FontSize', 12, 'FontWeight', 'bold');
     title('Evolutionary Trajectory Comparison', 'FontSize', 14);
     legend('Location', 'southeast', 'Interpreter', 'none');
-    set(gca, 'FontSize', 11);
     
-    % Prepare Plot 2: Box Plot
+    % Plot 2: Box Plot
     figure('Name', 'Phase 2: Distribution', 'Color', 'w', 'Position', [950, 100, 600, 600]);
     
     fieldNames = fieldnames(finalFitnessStruct);
@@ -162,32 +160,32 @@ if isfile(filePhase2)
         end
         
         boxplot(dataGroups, groupIndices, 'Labels', fieldNames);
-        grid on;
-        ylabel('Final Fitness Score');
-        title('Statistical Distribution of Final Performance');
+        grid on; ylabel('Final Fitness Score'); title('Asymptotic Performance Distribution');
         set(gca, 'TickLabelInterpreter', 'none', 'FontSize', 11);
         
         % Jitter overlay
         hold on;
         for i = 1:length(fieldNames)
             vals = finalFitnessStruct.(fieldNames{i});
-            x_vals = i + (rand(size(vals))-0.5)*0.15;
-            scatter(x_vals, vals, 50, 'k', 'filled', 'MarkerFaceAlpha', 0.6);
+            scatter(repmat(i,size(vals)) + (rand(size(vals))-0.5)*0.1, vals, 50, 'k', 'filled', 'MarkerFaceAlpha', 0.6);
         end
         hold off;
         
-        % 3. Statistical Test (Automated)
+        % T-Test
         fprintf('\n--- Pairwise T-Test Analysis ---\n');
         if length(fieldNames) >= 2
-            % Compare first two groups (usually Baseline vs Proposed)
             g1 = fieldNames{1};
             g2 = fieldNames{2};
             d1 = finalFitnessStruct.(g1);
             d2 = finalFitnessStruct.(g2);
             
-            [h, p, ~, ~] = ttest2(d1, d2);
-            fprintf('Comparing %s vs %s:\n', g1, g2);
+            fprintf('Comparing %s (N=%d) vs %s (N=%d):\n', g1, length(d1), g2, length(d2));
+            
+            [h, p, ci, stats] = ttest2(d1, d2);
+            
             fprintf('   p-value: %.5e\n', p);
+            fprintf('   t-statistic: %.4f\n', stats.tstat);
+            
             if h
                 fprintf('   RESULT: Significant Difference (p < 0.05)\n');
                 if mean(d1) > mean(d2)
@@ -196,13 +194,11 @@ if isfile(filePhase2)
                      fprintf('   WINNER: %s\n', g2);
                 end
             else
-                fprintf('   RESULT: No Significant Difference detected.\n');
+                fprintf('   RESULT: No Significant Difference detected (p >= 0.05).\n');
             end
         end
     end
-    
 else
-    fprintf('Skipping Phase 2: File not found (%s)\n', filePhase2);
+    fprintf('Skipping Phase 2: File not found.\n');
 end
-
-fprintf('\nAnalysis Complete. All figures generated.\n');
+fprintf('\nAnalysis Complete.\n');
