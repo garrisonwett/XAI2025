@@ -10,16 +10,10 @@ logger = LoggerUtility().get_logger()
 
 def get_bullet_speed() -> float:
     """
-    Gets the current default bullet speed from the Kessler Game `Bullet` class.
-
-    Returns:
-        float: The default bullet speed.
+    Gets the current default bullet speed.
+    
+    NOTE: We return a hardcoded 800.0 because the KesslerGame library 
+    is compiled (mypyc), making 'inspect' impossible, and instantiating 
+    a dummy Bullet requires complex owner/ship arguments.
     """
-    try:
-        lines = inspect.getsource(Bullet)
-        match = re.search(r"self\.speed\s*=\s*([0-9.]+)", lines)
-        if match:
-            return float(match.group(1))
-    except (ValueError, AttributeError, TypeError) as e:
-        logger.error(f"Error in get_bullet_speed: {e}")
     return 800.0

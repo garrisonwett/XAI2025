@@ -46,7 +46,7 @@ if __name__ == "__main__":
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="training2",
+        default="crush",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
 
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--chromosome_file",
         type=str,
-        default="final_best_agent.pkl",
+        default="final_best_agent_2_16.pkl",
         help="Path to the saved GA chromosome pickle.",
     )
 
