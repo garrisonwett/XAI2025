@@ -56,6 +56,7 @@ class FuzzyController(KesslerController):
         """Returns (thrust, turn_rate, shoot, deploy_mine)."""
         self.bullet_speed = get_bullet_speed()
 
+        
         # --- Parse ship state ---
         ship_pos        = ship_state["position"]
         ship_heading    = ship_state["heading"]

@@ -46,10 +46,10 @@ if __name__ == "__main__":
         "--scenario",
         choices=scenarios.keys(),
         type=str,
-        default="crush",
+        default="training1",
         help="Select a scenario by name: " + ", ".join(scenarios.keys()),
     )
-
+    
     parser.add_argument(
         "--game_type",
         choices=["KesslerGame", "TrainerEnvironment"],
@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     # Load scenario
     selected_scenario: Scenario = scenarios[args.scenario]
-
+    selected_scenario: Scenario = random_repeatable_frozen(0)  # For consistent asteroid layout across runs
     # Load chromosome
     if not os.path.isfile(args.chromosome_file):
         raise FileNotFoundError(f"Could not find file: {args.chromosome_file}")
