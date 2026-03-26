@@ -1,6 +1,6 @@
 ============================================================================
   CHROMOSOME COMPARISON REPORT
-  Generated: 2026-02-16 09:23:18
+  Generated: 2026-02-28 11:55:35
 ============================================================================
 
 ┌─ TREE COMPLEXITY
@@ -13,66 +13,66 @@
 ┌─ OVERALL PERFORMANCE (mean ± std across all scenarios & runs)
 │  Metric                         GA-Evolved           Hand-Tuned    Δ (GA−HT)
 │  ──────────────────── ──────────────────── ──────────────────── ────────────
-│  Fitness                187.82 ± 198.60      22.57 ± 80.33       +165.26
-│  Asteroids Hit          245.20 ± 213.57     106.40 ± 53.18       +138.80
-│  Accuracy                 0.91 ± 0.09         0.87 ± 0.12          +0.04
-│  Deaths                   1.80 ± 2.23         3.40 ± 2.06          -1.60
-│  Shots Fired            268.40 ± 223.12     123.60 ± 65.95       +144.80
-│  Wall Time (s)            1.15 ± 1.03         0.56 ± 0.54          +0.58
-│  Eval Time (ms)         690.84 ± 613.14     280.11 ± 236.01      +410.74
+│  Fitness                187.82 ± 198.60     211.11 ± 228.50       -23.29
+│  Asteroids Hit          245.20 ± 213.57     245.80 ± 212.96        -0.60
+│  Accuracy                 0.91 ± 0.09         0.93 ± 0.06          -0.03
+│  Deaths                   1.80 ± 2.23         1.00 ± 2.00          +0.80
+│  Shots Fired            268.40 ± 223.12     261.00 ± 220.88        +7.40
+│  Wall Time (s)            1.14 ± 1.00         1.11 ± 0.96          +0.03
+│  Eval Time (ms)         687.01 ± 600.57     652.21 ± 555.21       +34.80
 └───────────────────────────────────────────────────────────────────────────
 
 ┌─ PER-SCENARIO BREAKDOWN (Fitness: mean ± std)
 │  Scenario                         GA-Evolved           Hand-Tuned     Winner
 │  ────────────────────── ──────────────────── ──────────────────── ──────────
-│  training1                528.43 ± 0.00       -45.28 ± 0.00           GA ✓
-│  training2                236.86 ± 0.00        33.60 ± 0.00           GA ✓
-│  training3                -74.00 ± 0.00       -73.00 ± 0.00         HAND ✓
-│  crush                    156.10 ± 0.00       157.06 ± 0.00         HAND ✓
-│  aim_trainer               91.72 ± 0.00        40.45 ± 0.00           GA ✓
+│  training1                528.43 ± 0.00       615.02 ± 0.00         HAND ✓
+│  training2                236.86 ± 0.00       259.60 ± 0.00         HAND ✓
+│  training3                -74.00 ± 0.00       -71.00 ± 0.00         HAND ✓
+│  crush                    156.10 ± 0.00       153.29 ± 0.00           GA ✓
+│  aim_trainer               91.72 ± 0.00        98.63 ± 0.00         HAND ✓
 │
-│  Scenario wins: GA=3, Hand=2, Tie=0
+│  Scenario wins: GA=1, Hand=4, Tie=0
 └───────────────────────────────────────────────────────────────────────────
 
   ── training1 ──
   Metric                       GA-Evolved           Hand-Tuned
-  Fitness              528.43 ± 0.00       -45.28 ± 0.00    
-  Asteroids Hit        640.00 ± 0.00        64.00 ± 0.00    
-  Accuracy               0.95 ± 0.00         0.86 ± 0.00    
-  Deaths                 4.00 ± 0.00         5.00 ± 0.00    
-  Shots Fired          669.00 ± 0.00        69.00 ± 0.00    
+  Fitness              528.43 ± 0.00       615.02 ± 0.00    
+  Asteroids Hit        640.00 ± 0.00       640.00 ± 0.00    
+  Accuracy               0.95 ± 0.00         0.96 ± 0.00    
+  Deaths                 4.00 ± 0.00         0.00 ± 0.00    
+  Shots Fired          669.00 ± 0.00       666.00 ± 0.00    
 
   ── training2 ──
   Metric                       GA-Evolved           Hand-Tuned
-  Fitness              236.86 ± 0.00        33.60 ± 0.00    
-  Asteroids Hit        280.00 ± 0.00       161.00 ± 0.00    
-  Accuracy               0.85 ± 0.00         0.83 ± 0.00    
-  Deaths                 0.00 ± 0.00         5.00 ± 0.00    
-  Shots Fired          331.00 ± 0.00       188.00 ± 0.00    
+  Fitness              236.86 ± 0.00       259.60 ± 0.00    
+  Asteroids Hit        280.00 ± 0.00       280.00 ± 0.00    
+  Accuracy               0.85 ± 0.00         0.93 ± 0.00    
+  Deaths                 0.00 ± 0.00         0.00 ± 0.00    
+  Shots Fired          331.00 ± 0.00       302.00 ± 0.00    
 
   ── training3 ──
   Metric                       GA-Evolved           Hand-Tuned
-  Fitness              -74.00 ± 0.00       -73.00 ± 0.00    
-  Asteroids Hit         26.00 ± 0.00        27.00 ± 0.00    
+  Fitness              -74.00 ± 0.00       -71.00 ± 0.00    
+  Asteroids Hit         26.00 ± 0.00        29.00 ± 0.00    
   Accuracy               1.00 ± 0.00         1.00 ± 0.00    
   Deaths                 5.00 ± 0.00         5.00 ± 0.00    
-  Shots Fired           21.00 ± 0.00        22.00 ± 0.00    
+  Shots Fired           21.00 ± 0.00        24.00 ± 0.00    
 
   ── crush ──
   Metric                       GA-Evolved           Hand-Tuned
-  Fitness              156.10 ± 0.00       157.06 ± 0.00    
+  Fitness              156.10 ± 0.00       153.29 ± 0.00    
   Asteroids Hit        160.00 ± 0.00       160.00 ± 0.00    
-  Accuracy               0.98 ± 0.00         0.98 ± 0.00    
+  Accuracy               0.98 ± 0.00         0.96 ± 0.00    
   Deaths                 0.00 ± 0.00         0.00 ± 0.00    
-  Shots Fired          164.00 ± 0.00       163.00 ± 0.00    
+  Shots Fired          164.00 ± 0.00       167.00 ± 0.00    
 
   ── aim_trainer ──
   Metric                       GA-Evolved           Hand-Tuned
-  Fitness               91.72 ± 0.00        40.45 ± 0.00    
+  Fitness               91.72 ± 0.00        98.63 ± 0.00    
   Asteroids Hit        120.00 ± 0.00       120.00 ± 0.00    
-  Accuracy               0.76 ± 0.00         0.67 ± 0.00    
-  Deaths                 0.00 ± 0.00         2.00 ± 0.00    
-  Shots Fired          157.00 ± 0.00       176.00 ± 0.00    
+  Accuracy               0.76 ± 0.00         0.82 ± 0.00    
+  Deaths                 0.00 ± 0.00         0.00 ± 0.00    
+  Shots Fired          157.00 ± 0.00       146.00 ± 0.00    
 
 ============================================================================
   END OF REPORT

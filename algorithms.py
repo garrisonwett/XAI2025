@@ -19,18 +19,18 @@ import networkx as nx
 def get_ga_config():
     cfg = {
         # --- Genetic Algorithm Settings ---
-        "popsize": 500,                
-        "generations": 500,
+        "popsize": 1000,                
+        "generations": 1000,
         "tournament_k": 4,
         "num_elites": 3,
         
         # --- Multiprocessing ---
-        "num_workers": max(1, int(os.cpu_count() * 0.75)),             
+        "num_workers": max(1, int(os.cpu_count() * 0.5)),             
         
         # --- Problem Constraints ---
         "input_count": 5,             
         "groups": [],                 
-        "max_hours": 12,             
+        "max_hours": 100,             
 
         # --- Mutation Rates ---
         "mf_mut_rate_start": 0.50, "mf_mut_rate_end": 0.02,

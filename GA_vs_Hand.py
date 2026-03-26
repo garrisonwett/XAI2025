@@ -765,7 +765,7 @@ def main():
     )
     parser.add_argument("--ga_file", type=str, default="final_best_agent_2_16.pkl",
                         help="Path to GA-evolved chromosome .pkl")
-    parser.add_argument("--hand_file", type=str, default="hand_tuned_chromosome.pkl",
+    parser.add_argument("--hand_file", type=str, default="final_best_agent_2_28.pkl",
                         help="Path to hand-tuned chromosome .pkl")
     parser.add_argument("--scenarios", nargs="+",
                         default=["training1", "training2", "training3", "crush", "aim_trainer"],
