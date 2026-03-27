@@ -1,74 +1,210 @@
 import math
 from typing import Tuple, List
-
-from utils import LoggerUtility
-
-
-logger = LoggerUtility().get_logger()
+import numpy as np
 
 
-# Calculating with a stationary ship assumption
+# =============================================================================
+# HIGH-LEVEL CONTROL FUNCTIONS
+# =============================================================================
+
+def turn_angle(
+    ship_position: Tuple[float, float],
+    ship_velocity: Tuple[float, float],
+    ship_heading: float,
+    ship_turn_rate_range: Tuple[float, float],
+    bullet_speed: float,
+    asteroid_position: Tuple[float, float],
+    asteroid_velocity: Tuple[float, float],
+    delta_time: float,
+    extra_tolerance: float = -0.5
+):
+    """
+    Calculate turn rate to aim at the intercept point of an asteroid.
+
+    ship_turn_rate_range is (min_rate, max_rate), e.g. (-180, 180):
+      min_rate = most-negative (fastest clockwise)
+      max_rate = most-positive (fastest counter-clockwise)
+
+    angle_delta > 0 → target is CCW from heading → positive turn rate needed
+    angle_delta < 0 → target is CW  from heading → negative turn rate needed
+    """
+    # 1. Intercept angle accounting for ship velocity
+    intercept_angle = _calc_intercept_angle(
+        ship_position, ship_velocity, bullet_speed,
+        asteroid_position, asteroid_velocity
+    )
+
+    # 2. Signed error in (-180, 180]
+    angle_delta = normalize_angle(intercept_angle - ship_heading)
+
+    # 3. Dynamic fire-tolerance based on asteroid angular size
+    dist = max(math.hypot(
+        asteroid_position[0] - ship_position[0],
+        asteroid_position[1] - ship_position[1]
+    ), 1.0)
+
+    ratio = min(max(8.0 / dist, -1.0), 1.0)
+    geometric_tolerance = math.degrees(math.asin(ratio))
+    final_tolerance = geometric_tolerance + extra_tolerance
+
+    is_aligned = abs(angle_delta) <= final_tolerance
+
+    # 4. Dead-zone — close enough, stop turning and fire
+    if abs(angle_delta) < 0.1:
+        return 0.0, True
+
+    # 5. Proportional turn with rate clamping
+    min_rate, max_rate = ship_turn_rate_range        # e.g. (-180, +180)
+
+    if angle_delta > 0:
+        # Need CCW (positive) turn
+        max_step = max_rate * delta_time             # max degrees we can cover this frame
+        if angle_delta <= max_step:
+            return angle_delta / delta_time, is_aligned
+        else:
+            return max_rate, is_aligned
+    else:
+        # Need CW (negative) turn
+        max_step = abs(min_rate) * delta_time
+        if abs(angle_delta) <= max_step:
+            return angle_delta / delta_time, is_aligned   # angle_delta is already negative
+        else:
+            return min_rate, is_aligned
+
+
+def go_to_angle(
+    ship_heading: float,
+    ship_turn_rate_range: Tuple[float, float],
+    target_angle: float,
+    delta_time: float,
+):
+    """Turn toward a target heading. Returns (turn_rate, arrived)."""
+    angle_delta = normalize_angle(target_angle - ship_heading)
+
+    if abs(angle_delta) < 1.0:
+        return 0.0, True
+
+    min_rate, max_rate = ship_turn_rate_range
+
+    if angle_delta > 0:
+        if angle_delta <= max_rate * delta_time:
+            return angle_delta / delta_time, True
+        return max_rate, False
+    else:
+        if abs(angle_delta) <= abs(min_rate) * delta_time:
+            return angle_delta / delta_time, True
+        return min_rate, False
+
+
+# =============================================================================
+# LOW-LEVEL VECTOR MATH & HELPERS
+# =============================================================================
+
+def normalize_angle(angle: float) -> float:
+    """Normalize an angle to (-180, 180]."""
+    return (angle + 180) % 360 - 180
+
+
+def wrapped_delta(pos1, pos2, map_size):
+    """Shortest (dx, dy) from pos1 to pos2, accounting for map wrapping."""
+    width, height = map_size
+    dx = pos2[0] - pos1[0]
+    dy = pos2[1] - pos1[1]
+
+    if dx > width / 2:
+        dx -= width
+    elif dx < -width / 2:
+        dx += width
+
+    if dy > height / 2:
+        dy -= height
+    elif dy < -height / 2:
+        dy += height
+
+    return dx, dy
+
+
 def _calc_intercept_angle(
     ship_position: Tuple[float, float],
+    ship_velocity: Tuple[float, float],
     bullet_speed: float,
     asteroid_position: Tuple[float, float],
     asteroid_velocity: Tuple[float, float],
 ) -> float:
     """
-    Calculate the angle for the ship to shoot in order to intercept a moving asteroid.
-
-    Args:
-        ship_position (Tuple[float, float]): The (x, y) position of the ship.
-        bullet_speed (float): The speed of the ship's bullets.
-        asteroid_position (Tuple[float, float]): The (x, y) position of the asteroid.
-        asteroid_velocity (Tuple[float, float]): The (x, y) velocity vector of the asteroid.
-
-    Returns:
-        float: The angle in degrees (0 to 360) that the ship needs to shoot to intercept the asteroid.
-               Returns 0 if no valid intercept is possible.
+    Angle the ship must face so a bullet (which inherits ship velocity)
+    intercepts the asteroid.  Falls back to direct bearing if no solution.
     """
-    # Cache math functions locally for faster lookups.
-    _sqrt = math.sqrt
-    _atan2 = math.atan2
-    _degrees = math.degrees
-
-    # Compute the relative position of the asteroid to the ship.
     dx = asteroid_position[0] - ship_position[0]
     dy = asteroid_position[1] - ship_position[1]
 
-    asteroid_v_x, asteroid_v_y = asteroid_velocity
+    # Relative velocity — asteroid motion in the bullet's rest frame
+    rel_vx = asteroid_velocity[0] - ship_velocity[0]
+    rel_vy = asteroid_velocity[1] - ship_velocity[1]
 
-    # Compute quadratic coefficients: a*t^2 + b*t + c = 0.
-    a = asteroid_v_x * asteroid_v_x + asteroid_v_y * asteroid_v_y - bullet_speed * bullet_speed
-    b = 2 * (dx * asteroid_v_x + dy * asteroid_v_y)
-    c = dx * dx + dy * dy
-    discriminant = b * b - 4 * a * c
+    # Quadratic: |D + V_rel*t|^2 = (bullet_speed * t)^2
+    a = rel_vx**2 + rel_vy**2 - bullet_speed**2
+    b = 2.0 * (dx * rel_vx + dy * rel_vy)
+    c = dx**2 + dy**2
+
+    discriminant = b * b - 4.0 * a * c
+
+    # Fallback: aim directly at current position
+    direct_angle = math.degrees(math.atan2(dy, dx)) % 360
 
     if discriminant < 0:
-        return 0
+        return direct_angle
 
-    sqrt_disc = _sqrt(discriminant)
-    denominator = 2 * a
+    sqrt_disc = math.sqrt(discriminant)
 
-    t1 = (-b + sqrt_disc) / denominator
-    t2 = (-b - sqrt_disc) / denominator
-
-    # Determine the earliest valid (non-negative) time without using a list comprehension.
-    if t1 >= 0 and (t2 < 0 or t1 <= t2):
-        t_min = t1
-    elif t2 >= 0:
-        t_min = t2
+    if abs(a) < 1e-9:
+        if abs(b) < 1e-9:
+            return direct_angle
+        t = -c / b
+        t_min = t if t > 0 else None
     else:
-        return 0
+        t1 = (-b + sqrt_disc) / (2.0 * a)
+        t2 = (-b - sqrt_disc) / (2.0 * a)
+        positives = [t for t in (t1, t2) if t > 0]
+        t_min = min(positives) if positives else None
 
-    # Calculate the intercept position using the earliest valid time.
-    intercept_dx = dx + asteroid_v_x * t_min
-    intercept_dy = dy + asteroid_v_y * t_min
+    if t_min is None:
+        return direct_angle
 
-    # Compute and normalize the intercept angle to the range [0, 360).
-    intercept_angle = _degrees(_atan2(intercept_dy, intercept_dx)) % 360
+    aim_dx = dx + rel_vx * t_min
+    aim_dy = dy + rel_vy * t_min
+    return math.degrees(math.atan2(aim_dy, aim_dx)) % 360
 
-    return intercept_angle
+
+def solve_intercept_time(ship_pos, ship_vel, bullet_speed, target_pos, target_vel):
+    """
+    Time 't' when a bullet fired now would reach the target.
+    Returns None if no positive-time solution exists.
+    """
+    dp = np.array(target_pos) - np.array(ship_pos)
+    dv = np.array(target_vel) - np.array(ship_vel)
+
+    A = np.dot(dv, dv) - bullet_speed**2
+    B = 2.0 * np.dot(dp, dv)
+    C = np.dot(dp, dp)
+
+    discriminant = B * B - 4.0 * A * C
+    if discriminant < 0:
+        return None
+
+    sqrt_disc = math.sqrt(discriminant)
+
+    if abs(A) < 1e-8:
+        if abs(B) < 1e-8:
+            return None
+        t = -C / B
+        return t if t > 0 else None
+
+    t1 = (-B - sqrt_disc) / (2.0 * A)
+    t2 = (-B + sqrt_disc) / (2.0 * A)
+
+    positives = [t for t in (t1, t2) if t > 0]
+    return min(positives) if positives else None
 
 
 def heading_relative_angle(
@@ -76,114 +212,14 @@ def heading_relative_angle(
     ship_heading: float,
     asteroid_position: Tuple[float, float],
 ) -> float:
-    """
-    Calculate the relative angle between the ship's heading and the direction to the asteroid.
-
-    Args:
-        ship_position (Tuple[float, float]): The (x, y) position of the ship.
-        ship_heading (float): The ship's current heading in degrees.
-        asteroid_position (Tuple[float, float]): The (x, y) position of the asteroid.
-
-    Returns:
-        float: The relative angle in degrees (0 to 360).
-    """
-    _atan2 = math.atan2
-    _degrees = math.degrees
-
+    """Angle from ship to asteroid relative to ship heading, in [0, 360)."""
     dx = asteroid_position[0] - ship_position[0]
     dy = asteroid_position[1] - ship_position[1]
-    angle = _degrees(_atan2(dy, dx)) % 360
-
+    angle = math.degrees(math.atan2(dy, dx)) % 360
     return (angle - ship_heading) % 360
 
 
-def turn_angle(
-    ship_position: Tuple[float, float],
-    ship_heading: float,
-    ship_turn_rate_range: Tuple[float, float],
-    bullet_speed: float,
-    asteroid_position: Tuple[float, float],
-    asteroid_velocity: Tuple[float, float],
-    delta_time: float,
-):
-    """
-    Calculate the angle the ship needs to turn to intercept a moving asteroid.
-
-    Args:
-        ship_position (Tuple[float, float]): The (x, y) position of the ship.
-        ship_heading (float): The current heading of the ship in degrees.
-        ship_turn_rate_range (Tuple[float, float]): The maximum turn rates (left, right) in degrees per second.
-        bullet_speed (float): The speed of the ship's bullets.
-        asteroid_position (Tuple[float, float]): The (x, y) position of the asteroid.
-        asteroid_velocity (Tuple[float, float]): The (x, y) velocity vector of the asteroid.
-        delta_time (float): The time interval for the calculation.
-
-    Returns:
-        Tuple[float, bool]: A tuple containing the turn rate (positive for left, negative for right)
-                            and a boolean indicating if the asteroid is nearly aligned.
-    """
-    # Compute the intercept angle and derive the angular difference.
-    intercept_angle = _calc_intercept_angle(
-        ship_position, bullet_speed, asteroid_position, asteroid_velocity
-    )
-    angle_delta = intercept_angle - ship_heading
-
-
-    distance = math.hypot(
-        asteroid_position[0] - ship_position[0],
-        asteroid_position[1] - ship_position[1],
-    )
-
-    ratio = 8/distance
-    ratio = max(-1.0, min(1.0, ratio))
-    angle_rad = math.asin(ratio)
-    tolerance = math.degrees(angle_rad)
-
-    # If the angular difference is negligible, no turn is needed.
-    if math.isclose(angle_delta, 0, abs_tol=1e-6):
-        return 0, True
-
-    # Unpack and adjust turn rate limits to avoid edge-case issues.
-    left_turn_rate, right_turn_rate = ship_turn_rate_range
-    left_turn_rate += 0.0001
-    right_turn_rate -= 0.0001
-
-    # Pre-calculate threshold values for efficiency.
-    left_threshold = left_turn_rate * delta_time
-    right_threshold = right_turn_rate * delta_time
-
-    # Determine the appropriate turn rate based on the sign and magnitude of angle_delta.
-    if 0 < angle_delta < 180:
-        if angle_delta < left_threshold:
-            return left_turn_rate, False
-        elif angle_delta < tolerance:
-            return angle_delta / delta_time, True
-        else:
-            return angle_delta / delta_time, False
-    else:
-        if angle_delta > right_threshold:
-            return right_turn_rate, False
-        elif angle_delta > -tolerance:
-            return angle_delta / delta_time, True
-        else:
-            return angle_delta / delta_time, False
-
-
-
-
-
 def heading_and_speed_to_velocity(heading: float, speed: float) -> Tuple[float, float]:
-    """
-    Convert a heading (in degrees) and speed to x, y velocity components.
-    
-    Args:
-        heading (float): The heading in degrees.
-        speed (float): The speed magnitude.
-    
-    Returns:
-        Tuple[float, float]: The (x, y) velocity components.
-    """
-    # Cache conversion to radians for speed.
     rad = math.radians(heading)
     return speed * math.cos(rad), speed * math.sin(rad)
 
@@ -195,50 +231,16 @@ def calculate_closure_rate(
     asteroid_position: Tuple[float, float],
     asteroid_velocity: Tuple[float, float],
 ) -> float:
-    """
-    Calculate the closure rate (rate at which the distance between the ship
-    and an asteroid is decreasing).
-
-    Args:
-        ship_position (Tuple[float, float]): The (x, y) position of the ship.
-        ship_heading (float): The heading of the ship in degrees.
-        ship_speed (float): The speed of the ship.
-        asteroid_position (Tuple[float, float]): The (x, y) position of the asteroid.
-        asteroid_velocity (Tuple[float, float]): The (x, y) velocity of the asteroid.
-
-    Returns:
-        float: The closure rate (positive means the ship is closing in on the asteroid).
-    """
-    # Cache math.sqrt for faster repeated use.
-    _sqrt = math.sqrt
-
-    # Compute positional differences.
+    """Positive = asteroid is approaching the ship."""
     dx = asteroid_position[0] - ship_position[0]
     dy = asteroid_position[1] - ship_position[1]
+    ship_vx, ship_vy = heading_and_speed_to_velocity(ship_heading, ship_speed)
 
-    # Get asteroid velocity components.
-    asteroid_v_x, asteroid_v_y = asteroid_velocity
-
-    # Compute ship velocity components.
-    ship_v_x, ship_v_y = heading_and_speed_to_velocity(ship_heading, ship_speed)
-
-    # Adjust values to avoid zero comparisons (preserving functionality).
-    if ship_heading == 0:
-        ship_heading = 1e-6
-    if ship_heading == 180:
-        ship_heading = 179.9999
-    if asteroid_v_x == 0:
-        asteroid_v_x = 1e-6
-    if asteroid_v_y == 0:
-        asteroid_v_y = 1e-6
-
-    # Compute the Euclidean distance (with a small epsilon added to prevent division by zero).
-    distance = _sqrt(dx * dx + dy * dy)
-    # Calculate closure rate as the negative dot product of the relative position and relative velocity,
-    # normalized by the distance.
-    closure_rate = -((dx * (asteroid_v_x - ship_v_x) + dy * (asteroid_v_y - ship_v_y))
-                     / (1e-6 + distance))
-    return closure_rate
+    distance = max(math.hypot(dx, dy), 1e-6)
+    return -(
+        (dx * (asteroid_velocity[0] - ship_vx) + dy * (asteroid_velocity[1] - ship_vy))
+        / distance
+    )
 
 
 def calculate_if_collide(
@@ -250,71 +252,31 @@ def calculate_if_collide(
     asteroid_velocity: Tuple[float, float],
     asteroid_radius: float,
 ) -> Tuple[bool, float]:
-    """
-    Calculate if the ship will collide with an asteroid and the time of collision.
+    """Returns (will_collide, time_to_collision).  time = -1 if no collision."""
+    ship_heading_rad = math.radians(ship_heading)
+    dx = asteroid_position[0] - ship_position[0]
+    dy = asteroid_position[1] - ship_position[1]
 
-    Args:
-        ship_position (Tuple[float, float]): The (x, y) position of the ship.
-        ship_heading (float): The heading of the ship in degrees.
-        ship_speed (float): The speed of the ship.
-        ship_radius (float): The radius of the ship.
-        asteroid_position (Tuple[float, float]): The (x, y) position of the asteroid.
-        asteroid_velocity (Tuple[float, float]): The (x, y) velocity vector of the asteroid.
-        asteroid_radius (float): The radius of the asteroid.
+    dv_x = asteroid_velocity[0] - ship_speed * math.cos(ship_heading_rad)
+    dv_y = asteroid_velocity[1] - ship_speed * math.sin(ship_heading_rad)
 
-    Returns:
-        Tuple[bool, float]: A tuple where the first element indicates collision (True/False)
-                            and the second element is the time until collision (or -1 if none).
-    """
-    # Cache frequently used math functions.
-    _sqrt = math.sqrt
-    _cos = math.cos
-    _sin = math.sin
-    _radians = math.radians
-
-    # Convert ship heading to radians.
-    ship_heading_rad = _radians(ship_heading)
-
-    # Unpack positions.
-    ship_x, ship_y = ship_position
-    asteroid_x, asteroid_y = asteroid_position
-    asteroid_v_x, asteroid_v_y = asteroid_velocity
-
-    # Compute differences in position.
-    dx = asteroid_x - ship_x
-    dy = asteroid_y - ship_y
-
-    # Compute relative velocity components.
-    dv_x = asteroid_v_x - ship_speed * _cos(ship_heading_rad)
-    dv_y = asteroid_v_y - ship_speed * _sin(ship_heading_rad)
-
-    # Sum of radii determines collision threshold.
     R = ship_radius + asteroid_radius
-
-    # Coefficients for the quadratic equation a*t^2 + b*t + c = 0.
     a = dv_x * dv_x + dv_y * dv_y
-    b = 2 * (dx * dv_x + dy * dv_y)
+    b = 2.0 * (dx * dv_x + dy * dv_y)
     c = dx * dx + dy * dy - R * R
 
-    discriminant = b * b - 4 * a * c
-    if discriminant < 0:
-        return False, -1
+    discriminant = b * b - 4.0 * a * c
+    if discriminant < 0 or abs(a) < 1e-9:
+        return False, -1.0
 
-    sqrt_disc = _sqrt(discriminant)
-    denominator = 2 * a
-    t1 = (-b + sqrt_disc) / denominator
-    t2 = (-b - sqrt_disc) / denominator
+    sqrt_disc = math.sqrt(discriminant)
+    t1 = (-b + sqrt_disc) / (2.0 * a)
+    t2 = (-b - sqrt_disc) / (2.0 * a)
 
-    # Determine the smallest non-negative collision time without using extra list allocations.
-    t_min = 1e12  # Large initial value.
-    if t1 >= 0 and t1 < t_min:
-        t_min = t1
-    if t2 >= 0 and t2 < t_min:
-        t_min = t2
-    if t_min == 1e12:
-        return False, -1
-
-    return True, t_min
+    positives = [t for t in (t1, t2) if t >= 0]
+    if not positives:
+        return False, -1.0
+    return True, min(positives)
 
 
 def game_to_ship_frame(
@@ -322,29 +284,15 @@ def game_to_ship_frame(
     asteroid_positions: List[Tuple[float, float]],
     game_size: Tuple[float, float],
 ) -> Tuple[Tuple[float, float], ...]:
-    """
-    Convert asteroid positions from game coordinates to positions relative to the ship,
-    accounting for map wrapping.
-
-    Args:
-        position_vector (Tuple[float, float]): The (x, y) position of the ship.
-        asteroid_positions (List[Tuple[float, float]]): List of asteroid positions.
-        game_size (Tuple[float, float]): The (width, height) dimensions of the game map.
-
-    Returns:
-        Tuple[Tuple[float, float], ...]: A tuple of relative positions (dx, dy) for each asteroid.
-    """
+    """Convert asteroid positions to ship-relative coordinates with wrapping."""
     map_x, map_y = game_size
     old_x, old_y = position_vector
-
     relative_positions = []
     for ast in asteroid_positions:
         dx = ast[0] - old_x
         dy = ast[1] - old_y
-        # Adjust for horizontal wrapping.
         if abs(dx) > map_x / 2:
             dx -= math.copysign(map_x, dx)
-        # Adjust for vertical wrapping.
         if abs(dy) > map_y / 2:
             dy -= math.copysign(map_y, dy)
         relative_positions.append((dx, dy))
@@ -352,96 +300,9 @@ def game_to_ship_frame(
 
 
 def distance_to(relative_position: Tuple[float, float]) -> float:
-    """
-    Compute the Euclidean distance from a relative (dx, dy) position.
-
-    Args:
-        relative_position (Tuple[float, float]): The (dx, dy) relative position.
-
-    Returns:
-        float: The Euclidean distance.
-    """
-    dx, dy = relative_position
-    return math.hypot(dx, dy)
+    return math.hypot(relative_position[0], relative_position[1])
 
 
 def sort_by_distance(asteroid_positions: List[Tuple[float, float]]) -> List[int]:
-    """
-    Sort asteroid indices by their distance from the origin (0, 0).
-
-    Args:
-        asteroid_positions (List[Tuple[float, float]]): List of asteroid positions.
-
-    Returns:
-        List[int]: Sorted indices of asteroids by increasing distance.
-    """
-    # Cache math.sqrt locally.
-    _sqrt = math.sqrt
-    # Precompute distances using list comprehension.
-    distances = [_sqrt(pos[0] * pos[0] + pos[1] * pos[1]) for pos in asteroid_positions]
-    # Return sorted indices based on computed distances.
+    distances = [math.hypot(pos[0], pos[1]) for pos in asteroid_positions]
     return sorted(range(len(distances)), key=lambda k: distances[k])
-
-
-def largest_gap_center(a):
-    a = sorted(a)
-    gaps = [(a[i+1] - a[i], a[i]) for i in range(len(a)-1)] + [(a[0] + 1 - a[-1], a[-1])]
-    d, s = max(gaps)
-    return (s + d/2) % 1
-
-
-def go_to_angle(
-    ship_heading: float,
-    ship_turn_rate_range: Tuple[float, float],
-    intercept_angle: float,
-    delta_time: float,
-):
-
-    angle_delta = intercept_angle - ship_heading
-
-    # If the angular difference is negligible, no turn is needed.
-    if math.isclose(angle_delta, 0, abs_tol=1e-6):
-        return 0, True
-
-    # Unpack and adjust turn rate limits to avoid edge-case issues.
-    left_turn_rate, right_turn_rate = ship_turn_rate_range
-    left_turn_rate += 0.0001
-    right_turn_rate -= 0.0001
-
-    # Pre-calculate threshold values for efficiency.
-    left_threshold = left_turn_rate * delta_time
-    right_threshold = right_turn_rate * delta_time
-
-    aim_tolerance = 1
-
-    # Determine the appropriate turn rate based on the sign and magnitude of angle_delta.
-    if 0 < angle_delta < 180:
-        if angle_delta < left_threshold:
-            return left_turn_rate, False
-        elif angle_delta < aim_tolerance:
-            return angle_delta / delta_time, True
-        else:
-            return angle_delta / delta_time, False
-    else:
-        if angle_delta > right_threshold:
-            return right_turn_rate, False
-        elif angle_delta > -aim_tolerance:
-            return angle_delta / delta_time, True
-        else:
-            return angle_delta / delta_time, False
-        
-
-def speed_to_thrust(current_speed: float, target_speed: float) -> float:
-    """
-    Calculate the thrust needed to reach a target speed.
-
-    Args:
-        current_speed (float): The current speed of the ship.
-        target_speed (float): The desired target speed.
-
-    Returns:
-        float: The thrust needed to reach the target speed.
-    """
-    thrust = min(max(30 * (target_speed - current_speed), -500), 500)
-
-    return thrust

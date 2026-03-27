@@ -1,0 +1,48 @@
+Genetic Algorithm Run Parameters and Results
+Run directory: Results\GA_20251120_184045
+Timestamp: 20251120_184045
+
+Parameters:
+  chromosome_length      = 68
+  population_size        = 20
+  max_generations        = 20
+  crossover_rate         = 0.8
+  mutation_rate_start    = 0.3
+  mutation_rate_end      = 0.05
+  mutation_step_start    = 0.15
+  mutation_step_end      = 0.02
+  tournament_k           = 3
+  num_cores              = 19
+  death_penalty_scale    = 10.0
+  preset_training_seeds  = [0, 1, 2]
+  random_seed_base       = 10000
+  validation_seeds       = [10, 11, 12]
+
+Summary:
+  total_time_seconds     = 673.1239
+  best_overall_training  = -1.250000
+  best_validation_avg    = -29.000000
+  num_generations_ran    = 20
+
+Per generation scores:
+  gen_index, training_avg_3plus1, validation_avg
+  0, -42.250000, -39.666667
+  1, -44.250000, -39.666667
+  2, -36.000000, -32.000000
+  3, -32.750000, -39.000000
+  4, -23.750000, -29.000000
+  5, -21.000000, -29.000000
+  6, -21.000000, -29.000000
+  7, -28.250000, -29.000000
+  8, -23.750000, -29.000000
+  9, -15.500000, -33.666667
+  10, -28.250000, -29.000000
+  11, -23.750000, -29.000000
+  12, -1.250000, -35.333333
+  13, -19.500000, -36.333333
+  14, -15.750000, -36.333333
+  15, -18.000000, -36.333333
+  16, -18.750000, -36.333333
+  17, -7.250000, -36.333333
+  18, -11.000000, -36.333333
+  19, -10.500000, -36.333333

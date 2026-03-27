@@ -1,244 +1,152 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # For 3D plotting
+from typing import List, Tuple, Callable
 
-# -------------------------------------------------------------------------
-#           Membership Function and Flexible Builder
-# -------------------------------------------------------------------------
-
-def triangular_mf(x, a, b, c):
-    """
-    Triangular membership function with feet at a and c and peak at b.
-    Returns the membership degree in [0,1] for a given x.
-    """
+# --------------------------------------------------------------
+# 1. Triangular membership function
+# --------------------------------------------------------------
+def triangular_mf_vectorized(x: float, a: float, b: float, c: float) -> float:
     if x <= a or x >= c:
         return 0.0
-    elif a < x < b:
-        return (x - a) / (b - a)
-    elif b <= x < c:
-        return (c - x) / (c - b)
-    else:
+    if a == b and x == a:
         return 1.0
+    if b == c and x == c:
+        return 1.0
+    if x < b:
+        return (x - a) / (b - a)
+    return (c - x) / (c - b)
 
-def build_triangles(centers):
-    """
-    Builds triangular membership functions over [0,1] given an array of middle centers.
-    
-    The membership functions are centered at:
-        0, (sorted centers...), 1.
-    
-    For each center, the left boundary is the midpoint with the previous center,
-    and the right boundary is the midpoint with the next center (with 0 and 1 clamped).
-    
-    Parameters:
-        centers (list or array): A list of center values (should be between 0 and 1).
-                                  They do not need to be sorted.
-    
-    Returns:
-        mfs (list): A list of membership functions (each is a callable function mf(x)).
-    """
-    # Ensure the centers are sorted
-    sorted_centers = sorted(centers)
-    # Include endpoints 0 and 1
-    full_centers = [0.0] + sorted_centers + [1.0]
-    
-    mfs = []
-    for i in range(len(full_centers)):
-        center = full_centers[i]
-        if i == 0:
-            left = full_centers[0]  # 0.0
-        else:
-            left = full_centers[i-1]
-        if i == len(full_centers) - 1:
-            right = full_centers[-1]  # 1.0
-        else:
-            right = full_centers[i+1]
-        # Freeze the current values using default arguments in the lambda.
-        mf = lambda x, a=left, b=center, c=right: triangular_mf(x, a, b, c)
-        mfs.append(mf)
-    return mfs
 
-# -------------------------------------------------------------------------
-#             Realistic TSK Inference Function
-# -------------------------------------------------------------------------
+# --------------------------------------------------------------
+# 2. Build three triangles per input with sum-to-one constraint
+# --------------------------------------------------------------
+def build_three_triangles(center_val: float):
+    center_val = float(np.clip(center_val, 0.0, 1.0))
 
-def tsk_inference_mult(x1, x2, x1_mfs, x2_mfs, params):
-    """
-    Computes the TSK output for inputs x1 and x2 using a rule base defined by the provided
-    membership functions and parameter matrix.
-    
-    Each rule (for indices i, j) has a consequent of the form:
-        y_ij = p0 + p1*x1 + p2*x2
-    where params[i][j] = [p0, p1, p2].
-    
-    The overall output is the weighted average of the rule outputs, with weights equal to the
-    product of the corresponding membership degrees.
-    """
-    numerator = 0.0
-    denominator = 0.0
+    # Triangles: left, center, right
+    t0 = (0.0, 0.0, center_val if center_val > 0 else 1e-6)
+    t1 = (0.0, center_val, 1.0)
+    t2 = (center_val if center_val < 1 else 1 - 1e-6, 1.0, 1.0)
 
-    # Loop over all membership functions for x1 and x2 (the rule base)
-    for i in range(len(x1_mfs)):
-        for j in range(len(x2_mfs)):
-            w_ij = x1_mfs[i](x1) * x2_mfs[j](x2)  # Rule firing strength
-            p1, p2 = params[i][j]
-            y_ij = p1 * x1 * p2 * x2        # Linear consequent
-            numerator   += w_ij * y_ij
-            denominator += w_ij
+    triangles = [t0, t1, t2]
 
-    if denominator == 0:
+    # Correct lambda creation. Each MF is directly a function.
+    mf_list = [
+        (lambda a=a, b=b, c=c: (lambda x, aa=a, bb=b, cc=c:
+            triangular_mf_vectorized(x, aa, bb, cc)))
+        ()  # Call the wrapper immediately to get the function
+        for (a, b, c) in triangles
+    ]
+
+    return mf_list, triangles
+
+
+def build_all_input_mfs(center_values: List[float]):
+    mf_sets = []
+    triangle_sets = []
+    for c in center_values:
+        mfs, tris = build_three_triangles(c)
+        mf_sets.append(mfs)
+        triangle_sets.append(tris)
+    return mf_sets, triangle_sets
+
+
+# --------------------------------------------------------------
+# 3. TSK Rule object
+# --------------------------------------------------------------
+class TSKRule:
+    def __init__(self, mf_indices: Tuple[int], coeffs: np.ndarray):
+        self.mf_indices = mf_indices
+        self.coeffs = coeffs
+
+
+# --------------------------------------------------------------
+# 4. Build TSK tree
+# --------------------------------------------------------------
+def build_tsk_tree(mf_sets: List[List[Callable]], coeff_matrix: np.ndarray):
+    from itertools import product
+    rule_indices = list(product(*[range(3) for _ in mf_sets]))
+    rules = [
+        TSKRule(mf_indices=idx_tuple, coeffs=coeff_matrix[i])
+        for i, idx_tuple in enumerate(rule_indices)
+    ]
+    return rules
+
+
+# --------------------------------------------------------------
+# 5. Rule evaluation
+# --------------------------------------------------------------
+def evaluate_rule(rule: TSKRule, mf_sets: List[List[Callable]], inputs: np.ndarray):
+    mu = 1.0
+    for dim, mf_idx in enumerate(rule.mf_indices):
+        mf = mf_sets[dim][mf_idx]  # This must be a function
+        mu *= mf(inputs[dim])      # Now this is safe
+
+    y = rule.coeffs[0] + np.dot(rule.coeffs[1:], inputs)
+    return mu, y
+
+
+# --------------------------------------------------------------
+# 6. Full TSK inference
+# --------------------------------------------------------------
+def tsk_tree_inference(rules: List[TSKRule], mf_sets: List[List[Callable]], inputs: np.ndarray):
+    wsum = 0.0
+    ysum = 0.0
+
+    for rule in rules:
+        mu, y = evaluate_rule(rule, mf_sets, inputs)
+        if mu > 0.0:
+            wsum += mu
+            ysum += mu * y
+
+    if wsum == 0.0:
         return 0.0
-    return numerator / denominator
-    
+    return ysum / wsum
 
-def tsk_inference_add(x1, x2, x1_mfs, x2_mfs, params):
-    """
-    Computes the TSK output for inputs x1 and x2 using a rule base defined by the provided
-    membership functions and parameter matrix.
-    
-    Each rule (for indices i, j) has a consequent of the form:
-        y_ij = p0 + p1*x1 + p2*x2
-    where params[i][j] = [p0, p1, p2].
-    
-    The overall output is the weighted average of the rule outputs, with weights equal to the
-    product of the corresponding membership degrees.
-    """
-    numerator = 0.0
-    denominator = 0.0
 
-    # Loop over all membership functions for x1 and x2 (the rule base)
-    for i in range(len(x1_mfs)):
-        for j in range(len(x2_mfs)):
-            w_ij = x1_mfs[i](x1) * x2_mfs[j](x2)  # Rule firing strength
-            p1, p2 = params[i][j]
-            y_ij = p1 * x1 + p2 * x2        # Linear consequent
-            numerator   += w_ij * y_ij
-            denominator += w_ij
+# --------------------------------------------------------------
+# 7. Visualization for all MFs
+# --------------------------------------------------------------
+def visualize_membership_functions(triangle_sets: List[List[Tuple[float, float, float]]],
+                                   resolution: int = 500):
+    x = np.linspace(0, 1, resolution)
 
-    if denominator == 0:
-        return 0.0
-    return numerator / denominator
+    num_inputs = len(triangle_sets)
+    fig, axes = plt.subplots(num_inputs, 1, figsize=(8, 3 * num_inputs))
 
-# -------------------------------------------------------------------------
-#                        Visualization Functions
-# -------------------------------------------------------------------------
+    if num_inputs == 1:
+        axes = [axes]
 
-def plot_mfs(mfs, x_range=(0,1), resolution=1000, title="Membership Functions"):
-    """
-    Plots a set of membership functions over the specified x_range.
-    
-    Parameters:
-        mfs: List of membership functions.
-        x_range: Tuple (min, max) for the x-axis.
-        resolution: Number of points to sample in x_range.
-        title: Title of the plot.
-    """
-    x_values = np.linspace(x_range[0], x_range[1], resolution)
-    plt.figure(figsize=(6,4))
-    for i, mf in enumerate(mfs):
-        y_values = [mf(x) for x in x_values]
-        plt.plot(x_values, y_values, label=f"MF {i}")
-    plt.title(title)
-    plt.xlabel("x")
-    plt.ylabel("Membership Degree")
-    plt.ylim([0, 1])
-    plt.legend()
-    plt.grid(True)
+    for idx, (triangles, ax) in enumerate(zip(triangle_sets, axes)):
+        for t in triangles:
+            a, b, c = t
+            y = np.array([triangular_mf_vectorized(val, a, b, c) for val in x])
+            ax.plot(x, y)
+
+        ax.set_title(f"Input {idx} Membership Functions")
+        ax.set_ylim([-0.1, 1.1])
+        ax.set_xlim([0, 1])
+        ax.grid(True)
+
+    plt.tight_layout()
     plt.show()
 
-def plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=50):
-    """
-    Plots the TSK output surface y = f(x1, x2) in 3D.
-    
-    Parameters:
-        x1_mfs: List of membership functions for x1.
-        x2_mfs: List of membership functions for x2.
-        params: Parameter matrix for the rule consequents.
-        resolution: Number of grid points in [0,1] for x1 and x2.
-    """
 
-
-    x1_vals = np.linspace(0.000001, 0.999999, resolution)
-    x2_vals = np.linspace(0.000001, 0.99999, resolution)
-    Z = np.zeros((resolution, resolution))
-
-
-    # Compute TSK output over the grid
-    for i, xv in enumerate(x1_vals):
-        for j, yv in enumerate(x2_vals):
-            Z[j, i] = tsk_inference_mult(xv, yv, x1_mfs, x2_mfs, params)
-
-    X1, X2 = np.meshgrid(x1_vals, x2_vals)
-
-    # 3D Surface Plot
-    fig = plt.figure(figsize=(8,5))
-    ax = fig.add_subplot(111, projection='3d')
-    surf = ax.plot_surface(X1, X2, Z, cmap='viridis', edgecolor='none')
-    ax.set_xlabel('X1')
-    ax.set_ylabel('X2')
-    ax.set_zlabel('TSK Output')
-    ax.set_title("TSK Output Surface")
-    fig.colorbar(surf, shrink=0.5, aspect=5)
-    plt.show()
-
-    # (Optional) 2D Contour Plot:
-    """
-    plt.figure(figsize=(6,4))
-    contour = plt.contourf(X1, X2, Z, cmap='viridis', levels=25)
-    plt.xlabel("x1")
-    plt.ylabel("x2")
-    plt.title("TSK Output Contour")
-    plt.colorbar(contour)
-    plt.show()
-    """
-
-# -------------------------------------------------------------------------
-#                               Main Demo
-# -------------------------------------------------------------------------
-
+# --------------------------------------------------------------
+# Example usage
+# --------------------------------------------------------------
 if __name__ == "__main__":
-    # Define your "middle" centers (they don't need to be fixed in number)
-    az_centers = [0.5] 
-    closure_centers = [0.5]
-    
+    center_values = [0.3, 0.8]
 
-    # You could also try: centers = [0.2, 0.4, 0.6, 0.9] (which yields 6 MFs)
+    mf_sets, triangle_sets = build_all_input_mfs(center_values)
+    visualize_membership_functions(triangle_sets)
 
-    # Build membership functions for x1 and x2 based on the provided centers.
-    x1_mfs = build_triangles(az_centers)
-    x2_mfs = build_triangles(closure_centers)
+    num_inputs = len(center_values)
+    num_rules = 3 ** num_inputs
+    coeff_matrix = np.random.uniform(-1, 1, size=(num_rules, num_inputs + 1))
 
-    # Visualize the membership functions
-    plot_mfs(x1_mfs, x_range=(0,1), title="x1 Membership Functions")
-    plot_mfs(x2_mfs, x_range=(0,1), title="x2 Membership Functions")
+    rules = build_tsk_tree(mf_sets, coeff_matrix)
 
-    # Set up realistic parameters for the TSK rule consequents.
-    # For each rule, we assume a linear consequent: y = p0 + p1*x1 + p2*x2.
-    # Since the number of rules equals len(x1_mfs) x len(x2_mfs),
-    # we create a parameter matrix accordingly.
-    num_rules_x1 = len(x1_mfs)
-    num_rules_x2 = len(x2_mfs)
-    params = []
-    for i in range(num_rules_x1):
-        row = []
-        for j in range(num_rules_x2):
-            # Example: p0, p1, and p2 are chosen based on the rule indices.
-            p1 = 1/(1+i)
-            p2 = 1/(1+j)
-            row.append([p1, p2])
-        params.append(row)
-
-    # Visualize the TSK output surface in 3D.
-    plot_tsk_surface(x1_mfs, x2_mfs, params, resolution=5)
-
-    # Test the TSK system at some discrete points.
-    test_points = [(0.0, 0.0),
-                   (0.1, 0.4),
-                   (0.3, 0.5),
-                   (0.9, 0.9),
-                   (1.0, 1.0)]
-    
-    print("TSK outputs at sample points:\n")
-    for (x1, x2) in test_points:
-        y_out = tsk_inference(x1, x2, x1_mfs, x2_mfs, params)
-        print(f"x1={x1:.2f}, x2={x2:.2f} => y={y_out:.3f}")
+    test_input = np.array([0.4, 0.9])
+    output = tsk_tree_inference(rules, mf_sets, test_input)
+    print("TSK output:", output)
